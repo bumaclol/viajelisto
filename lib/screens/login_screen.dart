@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 enum _AuthMode { login, create, recover }
 
@@ -588,4 +591,129 @@ class _Field extends StatelessWidget {
       ),
     );
   }
+
+class LoginScreen extends StatefulWidget {
+  @override
+  _LoginScreenState createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<StatefulWidget> {
+  final TextEditingController _correoController = TextEditingController();
+  final TextEditingController _codigoController = TextEditingController();
+  
+  bool _codigoEnviado = false; // Controla si se muestra el input del código
+  bool _isLoading = false;
+
+  // URL base de tu servidor Python (ajusta IP según tu entorno)
+  final String baseUrl = "http://10.0.2.2:5000/api";
+
+  // Paso 1: Solicitar código al servidor
+  Future<void> _solicitarCodigo() async {
+    setState(() => _isLoading = true);
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/solicitar-codigo'),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"correo": _correoController.text.trim()}),
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _codigoEnviado = true; // Muestra el campo para digitar el código
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Código enviado a tu correo electrónico.")),
+        );
+      } else {
+        final data = jsonDecode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['error'] ?? "Error al enviar código")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error de conexión con el servidor")),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // Paso 2: Verificar el código ingresado para entrar
+  Future<void> _verificarYEntrar() async {
+    setState(() => _isLoading = true);
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/verificar-ingreso'),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "correo": _correoController.text.trim(),
+          "codigo": _codigoController.text.trim(),
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        // Acceso concedido: Navegar a la pantalla principal de ViajeListo
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("¡Ingreso exitoso!")),
+        );
+        // Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['error'] ?? "Código inválido")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error al validar el código")),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text("Acceso / Recuperación - ViajeListo")),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TextField(
+              controller: _correoController,
+              decoration: InputDecoration(labelText: "Correo Electrónico"),
+              keyboardType: TextInputType.emailAddress,
+              enabled: !_codigoEnviado, // Bloquear correo una vez enviado el código
+            ),
+            SizedBox(height: 16),
+
+            // Mostrar campo de código sólo si ya fue solicitado
+            if (_codigoEnviado) ...[
+              TextField(
+                controller: _codigoController,
+                decoration: InputDecoration(
+                  labelText: "Código de verificación (6 dígitos)",
+                  counterText: "De un solo uso",
+                ),
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+              ),
+              SizedBox(height: 16),
+            ],
+
+            _isLoading
+                ? CircularProgressIndicator()
+                : ElevatedButton(
+                    onPressed: _codigoEnviado ? _verificarYEntrar : _solicitarCodigo,
+                    child: Text(_codigoEnviado ? "Verificar y Entrar" : "Enviar Código de Verificación"),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 }
