@@ -1,17 +1,13 @@
 """Servidor de TravelEquality: cuentas, listas y viaje."""
 
-# ==========================================
-# 1. IMPORTACIONES Y CONFIGURACIÓN INICIAL
-# ==========================================
 import hashlib
 import json
 import secrets
 import sqlite3
 import threading
-
-from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
 from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -30,9 +26,6 @@ app.add_middleware(
 )
 
 
-# ==========================================
-# 2. UTILIDADES DE TIEMPO Y FECHAS
-# ==========================================
 def now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -41,9 +34,6 @@ def stamp(moment: datetime) -> str:
     return moment.isoformat()
 
 
-# ==========================================
-# 3. CONEXIÓN E INICIALIZACIÓN DE LA BASE DE DATOS
-# ==========================================
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH)
@@ -79,9 +69,6 @@ def init_db() -> None:
         )
 
 
-# ==========================================
-# 4. UTILIDADES DE SEGURIDAD Y VALIDACIONES
-# ==========================================
 def fail(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status)
 
@@ -116,9 +103,6 @@ def public_user(row: sqlite3.Row) -> dict:
     }
 
 
-# ==========================================
-# 5. GESTIÓN DE TOKENS DE SESIÓN
-# ==========================================
 def issue_token(connection: sqlite3.Connection, user_id: int, kind: str, hours: int) -> str:
     connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, kind))
     token = secrets.token_urlsafe(9)
@@ -163,9 +147,6 @@ def user_from_header(authorization: str | None) -> sqlite3.Row | None:
         return None if found is None else dict(found)
 
 
-# ==========================================
-# 6. MODELOS DE PYDANTIC (ESQUEMAS DE ENTRADA)
-# ==========================================
 class RegistroIn(BaseModel):
     name: str
     email: str
@@ -200,18 +181,11 @@ class FotoIn(BaseModel):
     photo: str | None = None
 
 
-class CorreoIn(BaseModel):
-    email: str
-
-
 class DatosIn(BaseModel):
     listas: list
     viajes: list
 
 
-# ==========================================
-# 7. EVENTO DE INICIO Y RUTA DE SALUD
-# ==========================================
 @app.on_event("startup")
 def startup() -> None:
     init_db()
@@ -222,9 +196,6 @@ def salud() -> dict:
     return {"ok": True}
 
 
-# ==========================================
-# 8. RUTAS DE AUTENTICACIÓN Y GESTIÓN DE CUENTAS
-# ==========================================
 @app.post("/auth/registro")
 def registro(body: RegistroIn):
     name = body.name.strip()
@@ -341,6 +312,10 @@ def cambiar(body: CambiarIn, authorization: str | None = Header(default=None)):
     return {"ok": True}
 
 
+class CorreoIn(BaseModel):
+    email: str
+
+
 @app.post("/auth/recuperar")
 def recuperar(body: CorreoIn):
     email = body.email.strip().lower()
@@ -372,9 +347,6 @@ def restablecer(body: RestablecerIn):
     return {"ok": True}
 
 
-# ==========================================
-# 9. RUTAS DE SINCRONIZACIÓN DE DATOS (LISTAS Y VIAJES)
-# ==========================================
 @app.get("/datos")
 def leer_datos(authorization: str | None = Header(default=None)):
     row = user_from_header(authorization)
@@ -415,9 +387,6 @@ def guardar_datos(body: DatosIn, authorization: str | None = Header(default=None
     return {"ok": True}
 
 
-# ==========================================
-# 10. EJECUCIÓN DEL SERVIDOR
-# ==========================================
 if __name__ == "__main__":
     import uvicorn
 
