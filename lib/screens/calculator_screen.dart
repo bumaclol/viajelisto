@@ -23,6 +23,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   late final TextEditingController _other;
   late final TextEditingController _passengers;
   late final TextEditingController _budget;
+  final FocusNode _passengersFocus = FocusNode();
 
   @override
   void initState() {
@@ -37,6 +38,17 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       text: draft.passengers < 1 ? '1' : '${draft.passengers}',
     );
     _budget = TextEditingController(text: draft.budget);
+    _passengersFocus.addListener(_syncPassengersField);
+  }
+
+  /// Al salir del campo, si quedó vacío o inválido, muestra el valor guardado
+  /// para que lo visible coincida con lo que realmente se guardó.
+  void _syncPassengersField() {
+    if (_passengersFocus.hasFocus) return;
+    final typed = int.tryParse(_passengers.text.trim());
+    if (typed != null && typed >= 1) return;
+    final saved = context.read<AppController>().trips.first.passengers;
+    setState(() => _passengers.text = '${saved < 1 ? 1 : saved}');
   }
 
   @override
@@ -48,6 +60,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _other.dispose();
     _passengers.dispose();
     _budget.dispose();
+    _passengersFocus.dispose();
     super.dispose();
   }
 
@@ -61,7 +74,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       tolls: _tolls.text,
       otherExpenses: _other.text,
       budget: _budget.text,
-      passengers: passengers < 1 ? 0 : passengers,
+      passengers: passengers,
     );
 
     return ListView(
@@ -76,6 +89,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           tolls: _tolls,
           other: _other,
           passengers: _passengers,
+          passengersFocus: _passengersFocus,
           budget: _budget,
           onChanged: _onChanged,
         ),
@@ -119,6 +133,11 @@ class _SummaryCard extends StatelessWidget {
     final within = result?.withinBudget;
     final difference = result?.budgetDifference;
     final percent = _percent(result);
+    final hint = switch (preview) {
+      CostMissing(:final message) => message,
+      CostInvalid(:final message) => message,
+      CostReady() => '',
+    };
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -127,9 +146,13 @@ class _SummaryCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
       ),
       child: result == null
-          ? const Text(
-              'Completa distancia, rendimiento y precio para ver el gasto.',
-              style: TextStyle(color: Colors.white, height: 1.4),
+          ? Text(
+              hint,
+              style: TextStyle(
+                color: preview is CostInvalid ? const Color(0xFFFDA29B) : Colors.white,
+                fontWeight: preview is CostInvalid ? FontWeight.w700 : FontWeight.w400,
+                height: 1.4,
+              ),
             )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -264,6 +287,7 @@ class _FormCard extends StatelessWidget {
     required this.tolls,
     required this.other,
     required this.passengers,
+    required this.passengersFocus,
     required this.budget,
     required this.onChanged,
   });
@@ -274,6 +298,7 @@ class _FormCard extends StatelessWidget {
   final TextEditingController tolls;
   final TextEditingController other;
   final TextEditingController passengers;
+  final FocusNode passengersFocus;
   final TextEditingController budget;
   final ValueChanged<String> onChanged;
 
@@ -329,6 +354,7 @@ class _FormCard extends StatelessWidget {
               Expanded(
                 child: _SoftField(
                   controller: passengers,
+                  focusNode: passengersFocus,
                   label: 'Pasajeros',
                   helper: 'Incluye al conductor',
                   digitsOnly: true,
@@ -382,8 +408,7 @@ class _DetailCard extends StatelessWidget {
           _Line('Peajes', formatMoney(result.tolls)),
           _Line('Otros gastos', formatMoney(result.otherExpenses)),
           const Divider(height: 22),
-          _Line('Total del viaje', formatMoney(result.total), strong: true),
-          if (difference != null) ...[
+          _Line('Total del viaje', formatMoney(result.total), strong: true),          if (difference != null) ...[
             const SizedBox(height: 10),
             Row(
               children: [
@@ -410,10 +435,85 @@ class _DetailCard extends StatelessWidget {
               ],
             ),
           ],
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _showShareText(context, result),
+              icon: const Icon(Icons.copy_rounded, size: 18),
+              label: const Text('Generar texto para compartir'),
+            ),
+          ),
         ],
       ),
     );
   }
+
+  Future<void> _showShareText(BuildContext context, TripResult result) {
+    final text = buildShareText(result);
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Resumen del viaje'),
+        content: SingleChildScrollView(child: SelectableText(text)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cerrar'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: text));
+              if (!dialogContext.mounted) return;
+              Navigator.of(dialogContext).pop();
+              if (!context.mounted) return;
+              ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                const SnackBar(content: Text('Texto copiado al portapapeles')),
+              );
+            },
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('Copiar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Reparte el total en pesos enteros: si no divide exacto, los primeros
+/// pasajeros pagan $1 más, de modo que la suma da exactamente el total.
+List<int> splitTotal(int total, int passengers) {
+  if (passengers < 1) return const [];
+  final base = total ~/ passengers;
+  final remainder = total % passengers;
+  return List.generate(passengers, (i) => i < remainder ? base + 1 : base);
+}
+
+/// Texto listo para copiar con los ítems, el total y lo que paga cada pasajero.
+String buildShareText(TripResult result) {
+  final total = result.total.round();
+  final shares = splitTotal(total, result.passengers);
+  final buffer = StringBuffer()
+    ..writeln('🚗 Resumen del viaje')
+    ..writeln()
+    ..writeln('Gastos:')
+    ..writeln('• Combustible (${formatDecimal(result.liters)} L): ${formatMoney(result.fuelCost)}')
+    ..writeln('• Peajes: ${formatMoney(result.tolls)}')
+    ..writeln('• Otros gastos: ${formatMoney(result.otherExpenses)}')
+    ..writeln()
+    ..writeln('Total del viaje: ${formatMoney(total)}')
+    ..writeln()
+    ..writeln('Pasajeros (${result.passengers}):');
+  for (var i = 0; i < shares.length; i++) {
+    final label = i == 0 ? 'Pasajero 1 (conductor)' : 'Pasajero ${i + 1}';
+    buffer.writeln('• $label: ${formatMoney(shares[i])}');
+  }
+  if (shares.toSet().length > 1) {
+    buffer
+      ..writeln()
+      ..writeln(r'(El total no se divide exacto; algunos pagan $1 más para que la suma cuadre.)');
+  }
+  return buffer.toString().trimRight();
 }
 
 class _Line extends StatelessWidget {
@@ -468,11 +568,13 @@ class _SoftField extends StatelessWidget {
     required this.controller,
     required this.label,
     required this.onChanged,
+    this.focusNode,
     this.helper,
     this.digitsOnly = false,
   });
 
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final String label;
   final String? helper;
   final bool digitsOnly;
@@ -487,12 +589,17 @@ class _SoftField extends StatelessWidget {
         const SizedBox(height: 6),
         TextField(
           controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          focusNode: focusNode,
+          keyboardType: digitsOnly
+              ? TextInputType.number
+              : const TextInputType.numberWithOptions(decimal: true),
           textAlign: TextAlign.center,
           inputFormatters: [
             FilteringTextInputFormatter.allow(
               digitsOnly ? RegExp(r'[0-9]') : RegExp(r'[0-9.,]'),
             ),
+            // Sin ceros a la izquierda: el campo nunca muestra "0" ni "05".
+            if (digitsOnly) FilteringTextInputFormatter.deny(RegExp(r'^0+')),
           ],
           decoration: const InputDecoration(
             isDense: true,
