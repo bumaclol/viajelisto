@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../logic/trip_calculator.dart';
+import '../models/packing_list.dart';
 import '../models/trip_draft.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
@@ -450,7 +451,8 @@ class _DetailCard extends StatelessWidget {
   }
 
   Future<void> _showShareText(BuildContext context, TripResult result) {
-    final text = buildShareText(result);
+    final lists = context.read<AppController>().lists;
+    final text = buildShareText(result, lists: lists);
     return showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -489,8 +491,9 @@ List<int> splitTotal(int total, int passengers) {
   return List.generate(passengers, (i) => i < remainder ? base + 1 : base);
 }
 
-/// Texto listo para copiar con los ítems, el total y lo que paga cada pasajero.
-String buildShareText(TripResult result) {
+/// Texto listo para copiar con los gastos, el total, lo que paga cada pasajero
+/// y los ítems ya marcados en las listas de equipaje.
+String buildShareText(TripResult result, {List<PackingList> lists = const []}) {
   final total = result.total.round();
   final shares = splitTotal(total, result.passengers);
   final buffer = StringBuffer()
@@ -512,6 +515,18 @@ String buildShareText(TripResult result) {
     buffer
       ..writeln()
       ..writeln(r'(El total no se divide exacto; algunos pagan $1 más para que la suma cuadre.)');
+  }
+  final packedLists = lists.where((list) => list.packedCount > 0).toList();
+  if (packedLists.isNotEmpty) {
+    buffer
+      ..writeln()
+      ..writeln('🧳 Equipaje listo:');
+    for (final list in packedLists) {
+      if (packedLists.length > 1) buffer.writeln('${list.name}:');
+      for (final item in list.items.where((item) => item.packed)) {
+        buffer.writeln('• ${item.name} x${item.quantity}');
+      }
+    }
   }
   return buffer.toString().trimRight();
 }
