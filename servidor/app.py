@@ -454,19 +454,33 @@ def mail_listo() -> bool:
 
 def enviar_codigo(destinatario: str, codigo: str, minutos: int = 15) -> bool:
     if not mail_listo():
+        print("correo_sin_clave")
         return False
     message = EmailMessage()
     message["Subject"] = "Tu código de TravelEquality"
     message["From"] = os.environ["MAIL_USERNAME"].strip()
     message["To"] = destinatario
     message.set_content(f"Tu código de un solo uso es {codigo}. Vence en {minutos} minutos.")
+    user = os.environ["MAIL_USERNAME"].strip()
+    password = os.environ["MAIL_PASSWORD"].strip().replace(" ", "")
+    host = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
     try:
-        with smtplib.SMTP(os.environ.get("MAIL_SERVER", "smtp.gmail.com"), 587, timeout=10) as server:
+        with smtplib.SMTP(host, 587, timeout=20) as server:
+            server.ehlo()
             server.starttls()
-            server.login(os.environ["MAIL_USERNAME"].strip(), os.environ["MAIL_PASSWORD"].strip())
+            server.ehlo()
+            server.login(user, password)
             server.send_message(message)
         return True
-    except (OSError, smtplib.SMTPException):
+    except (OSError, smtplib.SMTPException) as error:
+        print(f"correo_587 {type(error).__name__}: {error}")
+    try:
+        with smtplib.SMTP_SSL(host, 465, timeout=20) as server:
+            server.login(user, password)
+            server.send_message(message)
+        return True
+    except (OSError, smtplib.SMTPException) as error:
+        print(f"correo_465 {type(error).__name__}: {error}")
         return False
 
 
