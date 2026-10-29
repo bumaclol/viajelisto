@@ -303,7 +303,12 @@ def registro(body: RegistroIn, request: Request):
             (name, email, hash_password(body.password)),
         )
         token = issue_token(connection, cursor.lastrowid, "verify", 24)
-    return {"token": token}
+    if not enviar_codigo(email, token, minutos=24 * 60):
+        with _LOCK, connect() as connection:
+            connection.execute("DELETE FROM tokens WHERE token = ?", (token,))
+            connection.execute("DELETE FROM users WHERE email = ?", (email,))
+        return fail(400, "No se pudo enviar el correo de confirmación.")
+    return {"ok": True, "mensaje": "Revisa tu correo para confirmar la cuenta."}
 
 
 @app.post("/auth/confirmar")
@@ -414,10 +419,10 @@ def recuperar(body: CorreoIn, request: Request):
         row = connection.execute("SELECT id, verified FROM users WHERE email = ?", (email,)).fetchone()
         if row is not None and row["verified"]:
             token = issue_token(connection, row["id"], "reset", 1)
-    payload = {"ok": True, "mensaje": _MISMO_AVISO}
-    if token is not None and not mail_listo():
-        payload["token"] = token
-    return payload
+    if token is not None and not enviar_codigo(email, token, minutos=60):
+        with _LOCK, connect() as connection:
+            connection.execute("DELETE FROM tokens WHERE token = ?", (token,))
+    return {"ok": True, "mensaje": _MISMO_AVISO}
 
 
 @app.post("/auth/restablecer")
@@ -447,14 +452,14 @@ def mail_listo() -> bool:
     return bool(user and password and "tu_correo" not in user)
 
 
-def enviar_codigo(destinatario: str, codigo: str) -> bool:
+def enviar_codigo(destinatario: str, codigo: str, minutos: int = 15) -> bool:
     if not mail_listo():
         return False
     message = EmailMessage()
     message["Subject"] = "Tu código de TravelEquality"
     message["From"] = os.environ["MAIL_USERNAME"].strip()
     message["To"] = destinatario
-    message.set_content(f"Tu código de un solo uso es {codigo}. Vence en 15 minutos.")
+    message.set_content(f"Tu código de un solo uso es {codigo}. Vence en {minutos} minutos.")
     try:
         with smtplib.SMTP(os.environ.get("MAIL_SERVER", "smtp.gmail.com"), 587, timeout=10) as server:
             server.starttls()
@@ -473,20 +478,21 @@ def solicitar_codigo(body: CorreoIn, request: Request):
     if not looks_like_email(email):
         return fail(400, "Escribe un correo válido.")
     code = None
+    user_id = None
     with _LOCK, connect() as connection:
         row = connection.execute("SELECT id, verified FROM users WHERE email = ?", (email,)).fetchone()
         if row is not None and row["verified"]:
+            user_id = row["id"]
             code = f"{secrets.randbelow(1_000_000):06d}"
-            connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (row["id"], "login"))
+            connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, "login"))
             connection.execute(
                 "INSERT INTO tokens (token, user_id, kind, expires_at) VALUES (?, ?, ?, ?)",
-                (code, row["id"], "login", stamp(now() + timedelta(minutes=15))),
+                (code, user_id, "login", stamp(now() + timedelta(minutes=15))),
             )
-    sent = enviar_codigo(email, code) if code is not None else False
-    payload = {"ok": True, "enviado": sent, "mensaje": _MISMO_AVISO}
-    if code is not None and not sent:
-        payload["codigo"] = code
-    return payload
+    if code is not None and not enviar_codigo(email, code):
+        with _LOCK, connect() as connection:
+            connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, "login"))
+    return {"ok": True, "mensaje": _MISMO_AVISO}
 
 
 @app.post("/api/verificar-ingreso")
