@@ -1,17 +1,24 @@
 # viajelisto
 
-Planificador de equipaje y costos de viaje compartido
+Planificador de equipaje y costos de viaje compartido.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## Conexión con el Servidor
 
-A few resources to get you started if this is your first Flutter project:
+La aplicación móvil se conecta al backend centralizado alojado en Render para que todo el equipo trabaje sobre la misma base de datos:
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- **Servidor:** `https://viajelisto.onrender.com`
+- **Comprobación de estado:** `https://viajelisto.onrender.com/salud`
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+> **Nota:** Al estar en el plan gratuito de Render, si el servicio ha estado inactivo puede tardar entre 40 y 60 segundos en responder a la primera petición mientras se reactiva la instancia.
+
+---
+
+## Cómo ejecutar la aplicación
+
+Para abrir y poner en marcha la app conectada al servidor:
+
+1. Instalar las dependencias de Flutter:
+   ```bash
+   flutter pub get

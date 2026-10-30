@@ -11,7 +11,7 @@ import 'theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(ViajeListoApp(cloud: CloudApi('http://127.0.0.1:8088')));
+  runApp(ViajeListoApp(cloud: CloudApi('https://viajelisto.onrender.com')));
 }
 
 class ViajeListoApp extends StatelessWidget {
@@ -22,7 +22,7 @@ class ViajeListoApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-        create: (_) => AppController(StorageService(cloud: cloud))..load(),
+      create: (_) => AppController(StorageService(cloud: cloud))..load(),
       child: MaterialApp(
         title: 'TravelEquality',
         debugShowCheckedModeBanner: false,
