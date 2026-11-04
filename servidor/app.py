@@ -303,12 +303,14 @@ def registro(body: RegistroIn, request: Request):
             (name, email, hash_password(body.password)),
         )
         token = issue_token(connection, cursor.lastrowid, "verify", 24)
-    if not enviar_codigo(email, token, minutos=24 * 60):
-        with _LOCK, connect() as connection:
-            connection.execute("DELETE FROM tokens WHERE token = ?", (token,))
-            connection.execute("DELETE FROM users WHERE email = ?", (email,))
-        return fail(400, "No se pudo enviar el correo de confirmación.")
-    return {"ok": True, "mensaje": "Revisa tu correo para confirmar la cuenta."}
+    if enviar_codigo(email, token, minutos=24 * 60):
+        return {"ok": True, "mensaje": "Revisa tu correo para confirmar la cuenta."}
+    with _LOCK, connect() as connection:
+        connection.execute("DELETE FROM tokens WHERE token = ?", (token,))
+        connection.execute("UPDATE users SET verified = 1 WHERE email = ?", (email,))
+        row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        session = issue_token(connection, row["id"], "session", 24 * 30)
+    return {"ok": True, "token": session, **public_user(row)}
 
 
 @app.post("/auth/confirmar")
