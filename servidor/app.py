@@ -12,6 +12,9 @@ import secrets
 import smtplib
 import sqlite3
 import threading
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -20,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+GOOGLE_CLIENT_ID = "798614168486-2f1rh7quro0s2ea52hd6gf9aptotsfp0.apps.googleusercontent.com"
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "datos" / "nube.db"
 _LOCK = threading.Lock()
@@ -218,6 +222,10 @@ class SocialIn(BaseModel):
     provider: str
 
 
+class GoogleIn(BaseModel):
+    id_token: str
+
+
 class EntrarIn(BaseModel):
     email: str
     password: str
@@ -326,6 +334,49 @@ def social(body: SocialIn, request: Request):
         return fail(400, "Esa opción no está disponible.")
     email = f"{provider}@viajelisto.cl"
     name = "Google" if provider == "google" else "Apple"
+    with _LOCK, connect() as connection:
+        row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if row is None:
+            cursor = connection.execute(
+                "INSERT INTO users (name, email, password_hash, verified) VALUES (?, ?, ?, 1)",
+                (name, email, hash_password(secrets.token_urlsafe(18))),
+            )
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        elif not row["verified"]:
+            connection.execute("UPDATE users SET verified = 1 WHERE id = ?", (row["id"],))
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
+        session = issue_token(connection, row["id"], "session", 24 * 30)
+    return {"ok": True, "token": session, **public_user(row)}
+
+
+def verify_google_token(id_token: str) -> dict | None:
+    if not id_token or len(id_token) > 4000:
+        return None
+    url = "https://oauth2.googleapis.com/tokeninfo?id_token=" + urllib.parse.quote(id_token)
+    try:
+        with urllib.request.urlopen(url, timeout=15) as response:
+            payload = json.loads(response.read().decode())
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
+        return None
+    if payload.get("aud") != GOOGLE_CLIENT_ID:
+        return None
+    if str(payload.get("email_verified", "")).lower() not in ("true", "1"):
+        return None
+    email = str(payload.get("email") or "").strip().lower()
+    if not looks_like_email(email):
+        return None
+    return payload
+
+
+@app.post("/auth/google")
+def google_login(body: GoogleIn, request: Request):
+    if limited(request, "social"):
+        return fail(429, "Demasiados intentos. Espera unos minutos.")
+    info = verify_google_token(body.id_token.strip())
+    if info is None:
+        return fail(400, "Google no confirmó esa cuenta.")
+    email = str(info["email"]).strip().lower()
+    name = str(info.get("name") or email.split("@", 1)[0]).strip() or email
     with _LOCK, connect() as connection:
         row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
         if row is None:
