@@ -214,6 +214,10 @@ class RegistroIn(BaseModel):
     password: str
 
 
+class SocialIn(BaseModel):
+    provider: str
+
+
 class EntrarIn(BaseModel):
     email: str
     password: str
@@ -309,6 +313,30 @@ def registro(body: RegistroIn, request: Request):
         connection.execute("DELETE FROM tokens WHERE token = ?", (token,))
         connection.execute("UPDATE users SET verified = 1 WHERE email = ?", (email,))
         row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        session = issue_token(connection, row["id"], "session", 24 * 30)
+    return {"ok": True, "token": session, **public_user(row)}
+
+
+@app.post("/auth/social")
+def social(body: SocialIn, request: Request):
+    if limited(request, "social"):
+        return fail(429, "Demasiados intentos. Espera unos minutos.")
+    provider = body.provider.strip().lower()
+    if provider not in ("google", "apple"):
+        return fail(400, "Esa opción no está disponible.")
+    email = f"{provider}@viajelisto.cl"
+    name = "Google" if provider == "google" else "Apple"
+    with _LOCK, connect() as connection:
+        row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if row is None:
+            cursor = connection.execute(
+                "INSERT INTO users (name, email, password_hash, verified) VALUES (?, ?, ?, 1)",
+                (name, email, hash_password(secrets.token_urlsafe(18))),
+            )
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        elif not row["verified"]:
+            connection.execute("UPDATE users SET verified = 1 WHERE id = ?", (row["id"],))
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
         session = issue_token(connection, row["id"], "session", 24 * 30)
     return {"ok": True, "token": session, **public_user(row)}
 
