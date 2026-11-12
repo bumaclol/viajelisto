@@ -10,7 +10,6 @@ import json
 import os
 import secrets
 import smtplib
-import sqlite3
 import threading
 import urllib.error
 import urllib.parse
@@ -23,9 +22,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+from db import connect, iniciar_supabase, usa_supabase
+
 GOOGLE_CLIENT_ID = "798614168486-2f1rh7quro0s2ea52hd6gf9aptotsfp0.apps.googleusercontent.com"
 ROOT = Path(__file__).resolve().parent
-DB_PATH = ROOT / "datos" / "nube.db"
 WEB_DIR = ROOT / "publico"
 _LOCK = threading.Lock()
 
@@ -91,14 +91,21 @@ def stamp(moment: datetime) -> str:
 # ==========================================
 # 3. CONEXIÓN E INICIALIZACIÓN DE LA BASE DE DATOS
 # ==========================================
-def connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
+def _cuando(value) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        parsed = datetime.fromisoformat(str(value))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def init_db() -> None:
+    if usa_supabase():
+        with _LOCK, connect() as connection:
+            iniciar_supabase(connection)
+        return
     with _LOCK, connect() as connection:
         connection.executescript(
             """
@@ -154,7 +161,7 @@ def check_password(password: str, stored: str) -> bool:
     return secrets.compare_digest(digest.hex(), digest_hex)
 
 
-def public_user(row: sqlite3.Row) -> dict:
+def public_user(row) -> dict:
     return {
         "name": row["name"],
         "email": row["email"],
@@ -166,7 +173,7 @@ def public_user(row: sqlite3.Row) -> dict:
 # ==========================================
 # 5. GESTIÓN DE TOKENS DE SESIÓN
 # ==========================================
-def issue_token(connection: sqlite3.Connection, user_id: int, kind: str, hours: int) -> str:
+def issue_token(connection, user_id: int, kind: str, hours: int) -> str:
     connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, kind))
     token = secrets.token_urlsafe(9)
     expires = stamp(now() + timedelta(hours=hours))
@@ -177,7 +184,7 @@ def issue_token(connection: sqlite3.Connection, user_id: int, kind: str, hours: 
     return token
 
 
-def take_token(connection: sqlite3.Connection, token: str, kind: str) -> sqlite3.Row | None:
+def take_token(connection, token: str, kind: str):
     row = connection.execute(
         """
         SELECT tokens.token, tokens.expires_at, users.id, users.email
@@ -189,14 +196,13 @@ def take_token(connection: sqlite3.Connection, token: str, kind: str) -> sqlite3
     ).fetchone()
     if row is None:
         return None
-    expires = datetime.fromisoformat(row["expires_at"])
-    if expires < now():
+    if _cuando(row["expires_at"]) < now():
         connection.execute("DELETE FROM tokens WHERE token = ?", (token,))
         return None
     return row
 
 
-def user_from_header(authorization: str | None) -> sqlite3.Row | None:
+def user_from_header(authorization: str | None):
     if not authorization or not authorization.startswith("Bearer "):
         return None
     token = authorization.removeprefix("Bearer ").strip()
@@ -336,7 +342,7 @@ def inicio():
 
 @app.get("/salud")
 def salud() -> dict:
-    return {"ok": True}
+    return {"ok": True, "base": "supabase" if usa_supabase() else "sqlite"}
 
 
 # ==========================================
@@ -722,7 +728,7 @@ def verificar_ingreso(body: VerificarIngresoIn):
             "SELECT expires_at FROM tokens WHERE user_id = ? AND kind = ? AND token = ?",
             (row["id"], "login", code),
         ).fetchone()
-        if saved is None or datetime.fromisoformat(saved["expires_at"]) < now():
+        if saved is None or _cuando(saved["expires_at"]) < now():
             return fail(400, "Código inválido.")
         connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (row["id"], "login"))
         token = issue_token(connection, row["id"], "session", 24 * 30)
