@@ -71,6 +71,9 @@ class _PackingScreenState extends State<PackingScreen> {
         TripCover(
           kicker: 'Nuestro próximo viaje',
           title: coverTitle,
+          imageAsset: 'assets/bosque-araucarias.jpg',
+          imageLabel: 'Araucarias en el Parque Nacional Conguillío',
+          imageAlignment: const Alignment(0, -0.25),
           onEdit: () => editTrip(context, trip),
         ),
         const SizedBox(height: 16),

@@ -69,6 +69,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/bosque-araucarias.jpg
     - assets/coastal-road.jpg
     - assets/torres-paine.jpg
 
