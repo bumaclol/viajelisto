@@ -5,6 +5,7 @@ import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
 import '../widgets/save_status.dart';
 import 'calculator_screen.dart';
+import 'home_screen.dart';
 import 'packing_screen.dart';
 import 'profile_screen.dart';
 import 'profile_settings_screen.dart';
@@ -74,11 +75,16 @@ class _HomeShellState extends State<HomeShell> {
   Widget get _page {
     switch (_index) {
       case 1:
-        return const CalculatorScreen();
+        return const PackingScreen();
       case 2:
+        return const CalculatorScreen();
+      case 3:
         return const ProfileScreen();
       default:
-        return const PackingScreen();
+        return HomeScreen(
+          onPrepare: () => _open(1),
+          onExpenses: () => _open(2),
+        );
     }
   }
 
@@ -165,6 +171,7 @@ class _BottomNav extends StatelessWidget {
   final ValueChanged<int> onSelect;
 
   static const _items = [
+    (Icons.home_outlined, Icons.home_rounded, 'Inicio'),
     (Icons.luggage_outlined, Icons.luggage_rounded, 'Equipaje'),
     (Icons.directions_car_outlined, Icons.directions_car_rounded, 'Viaje'),
     (Icons.person_outline_rounded, Icons.person_rounded, 'Cuenta'),
@@ -173,7 +180,7 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: line)),
@@ -225,7 +232,7 @@ class _NavItem extends StatelessWidget {
           children: [
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: selected ? lime : Colors.transparent,
                 borderRadius: BorderRadius.circular(14),
@@ -236,9 +243,11 @@ class _NavItem extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: color,
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     ),
                   ),

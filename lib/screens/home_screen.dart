@@ -184,14 +184,32 @@ class _TripCard extends StatelessWidget {
     final meta = distance.isEmpty ? '$people personas' : '$people personas · $distance km';
     final route = trip.route;
     final dates = trip.dates;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-      decoration: BoxDecoration(
-        color: forest,
-        borderRadius: BorderRadius.circular(26),
-      ),
-      child: Column(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(26),
+      child: Stack(
+        children: [
+          const Positioned.fill(
+            child: Image(
+              image: AssetImage('assets/torres-paine.jpg'),
+              fit: BoxFit.cover,
+              alignment: Alignment(0, -0.45),
+              semanticLabel: 'Lago y montañas de Torres del Paine',
+            ),
+          ),
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x660A140F), Color(0xE60A140F)],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+            child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
@@ -263,6 +281,9 @@ class _TripCard extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+            ),
           ),
         ],
       ),
