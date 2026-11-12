@@ -95985,7 +95985,7 @@ d=J.dm(A.bV(a3,!0,t.o).c)
 c=d.geJ()
 b=e instanceof A.ue?e:a1
 a=b==null?"$0":a0.amI(b.a)
-q=A.aKi(B.CA,"assets/torres-paine.jpg","Lago y monta\xf1as de Torres del Paine","Nuestro pr\xf3ximo viaje",new A.ap8(a3,d),"Cada uno paga lo justo.")
+q=A.aKi(B.Y,"assets/coastal-road.jpg","Camino costero entre monta\xf1as y el oc\xe9ano","Nuestro pr\xf3ximo viaje",new A.ap8(a3,d),"Cada uno paga lo justo.")
 o=t.p
 m=A.dN(A.cs(A.b([B.a0v,B.dO,A.aB(a,a1,a1,a1,B.ZV,a1,a1)],o),B.ad,B.p,B.z),1)
 k=B.c.aK(d.c)
@@ -97329,7 +97329,7 @@ k=l.length!==0&&n?"De "+l+" a "+o+".":"Menos olvidos. M\xe1s aventuras."
 n=J.b9(a3)
 j=n.gG(a3)
 l=A.aB(m,a1,a1,a1,B.BM,a1,a1)
-i=A.aKi(B.Y,"assets/coastal-road.jpg","Camino costero entre monta\xf1as y el oc\xe9ano","Nuestro pr\xf3ximo viaje",new A.avc(a7,p),k)
+i=A.aKi(B.CA,"assets/torres-paine.jpg","Lago y monta\xf1as de Torres del Paine","Nuestro pr\xf3ximo viaje",new A.avc(a7,p),k)
 h=t.p
 g=A.d3(A.b([B.JI,B.j4,B.Is,A.aB(""+q+"%",a1,a1,a1,B.ZC,a1,a1)],h),B.D,B.p,B.z,0)
 f=""+s
