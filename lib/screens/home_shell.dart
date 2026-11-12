@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
+import '../widgets/save_status.dart';
 import 'calculator_screen.dart';
-import 'home_screen.dart';
 import 'packing_screen.dart';
 import 'profile_screen.dart';
 import 'profile_settings_screen.dart';
@@ -19,13 +19,6 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
   var _askingMerge = false;
-
-  static const _subtitles = [
-    'Tu próximo buen recuento.',
-    'Menos olvidos, más viaje.',
-    'Las cuentas, claras.',
-    'Tus planes van contigo.',
-  ];
 
   void _open(int index) => setState(() => _index = index);
 
@@ -81,13 +74,11 @@ class _HomeShellState extends State<HomeShell> {
   Widget get _page {
     switch (_index) {
       case 1:
-        return const PackingScreen();
-      case 2:
         return const CalculatorScreen();
-      case 3:
+      case 2:
         return const ProfileScreen();
       default:
-        return HomeScreen(onPrepare: () => _open(1), onExpenses: () => _open(2));
+        return const PackingScreen();
     }
   }
 
@@ -109,7 +100,6 @@ class _HomeShellState extends State<HomeShell> {
             child: Column(
               children: [
                 _BrandBar(
-                  subtitle: _subtitles[_index],
                   onBell: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(builder: (_) => const NotificationsSettingsScreen()),
@@ -128,41 +118,39 @@ class _HomeShellState extends State<HomeShell> {
 }
 
 class _BrandBar extends StatelessWidget {
-  const _BrandBar({required this.subtitle, required this.onBell});
+  const _BrandBar({required this.onBell});
 
-  final String subtitle;
   final VoidCallback onBell;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 12, 4),
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 8),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'TravelEquality',
-                  style: TextStyle(
-                    fontFamily: displayFamily,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w700,
-                    color: forestDeep,
-                    height: 1.05,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(subtitle, style: const TextStyle(color: moss, fontSize: 14)),
-              ],
+          Container(
+            width: 28,
+            height: 28,
+            decoration: const BoxDecoration(color: forest, shape: BoxShape.circle),
+            child: const Icon(Icons.explore_rounded, color: Colors.white, size: 16),
+          ),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'TravelEquality',
+              style: TextStyle(
+                fontFamily: displayFamily,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: forestDeep,
+              ),
             ),
           ),
+          const SaveStatus(compact: true),
           IconButton(
             tooltip: 'Notificaciones',
             onPressed: onBell,
-            icon: const Icon(Icons.notifications_none_rounded, color: forestDeep),
+            icon: const Icon(Icons.notifications_none_rounded, color: moss, size: 20),
           ),
         ],
       ),
@@ -177,9 +165,8 @@ class _BottomNav extends StatelessWidget {
   final ValueChanged<int> onSelect;
 
   static const _items = [
-    (Icons.home_outlined, Icons.home_rounded, 'Inicio'),
     (Icons.luggage_outlined, Icons.luggage_rounded, 'Equipaje'),
-    (Icons.directions_car_filled_outlined, Icons.directions_car_filled_rounded, 'Viaje'),
+    (Icons.directions_car_outlined, Icons.directions_car_rounded, 'Viaje'),
     (Icons.person_outline_rounded, Icons.person_rounded, 'Cuenta'),
   ];
 
@@ -207,11 +194,6 @@ class _BottomNav extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 4),
-          const Text(
-            'Viaje en grupo. Vuelve con buenos recuerdos.',
-            style: TextStyle(color: moss, fontSize: 11),
-          ),
         ],
       ),
     );
@@ -235,7 +217,7 @@ class _NavItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = selected ? forestDeep : moss;
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -243,20 +225,24 @@ class _NavItem extends StatelessWidget {
           children: [
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
                 color: selected ? lime : Colors.transparent,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, color: color, size: 22),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              child: Column(
+                children: [
+                  Icon(icon, color: color, size: 22),
+                  const SizedBox(height: 2),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

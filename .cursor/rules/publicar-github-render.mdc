@@ -1,0 +1,13 @@
+---
+description: Después de cambiar TravelEquality, publicar en GitHub y en Render
+alwaysApply: true
+---
+
+# Publicar GitHub y Render
+
+Cuando un cambio de TravelEquality queda listo, súbelo a GitHub y a Render en el mismo turno. No lo dejes solo en el computador.
+
+- GitHub: rama `main` de https://github.com/bumaclol/viajelisto. Haz commit y `git push origin main`. No uses `--force`.
+- Render: el sitio https://viajelisto.onrender.com sale de la rama `servidor/render`, carpeta `servidor`. Después de `flutter build web`, copia `build/web` a `servidor/publico`, súbelo en `servidor/render` y espera a que la dirección pública muestre el cambio.
+- No subas `render-wt/`, contraseñas, tokens ni la base `servidor/datos/`.
+- Si el push a `main` pide aprobación, pídela y vuelve a intentarlo. No lo dejes pendiente.

@@ -97,46 +97,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
               constraints: const BoxConstraints(maxWidth: 420),
               child: Column(
                 children: [
-                  if (_mode == _AuthMode.login) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
-                      decoration: BoxDecoration(
-                        color: forest,
-                        borderRadius: BorderRadius.circular(28),
-                      ),
-                      child: const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '¿A DÓNDE VAMOS?',
-                            style: TextStyle(
-                              color: Color(0xFFD7E3D4),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.6,
-                            ),
-                          ),
-                          SizedBox(height: 10),
-                          Text(
-                            'Hola de nuevo.',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 32,
-                              fontWeight: FontWeight.w700,
-                              height: 1.05,
-                            ),
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            'Tu equipaje, tus cuentas y tu próximo viaje. Todo donde lo dejaste.',
-                            style: TextStyle(color: Color(0xFFD5E2D2), height: 1.35),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 22),
-                  ],
                   if (_mode != _AuthMode.login) ...[
                     FadeTransition(
                       opacity: CurvedAnimation(
@@ -197,11 +157,12 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                     ? 'Recuperar contraseña'
                                     : _creating
                                         ? 'Crea tu cuenta'
-                                        : 'Inicia sesión',
-                            style: const TextStyle(
+                                        : 'TravelEquality',
+                            style: TextStyle(
+                              fontFamily: displayFamily,
                               fontSize: 26,
                               fontWeight: FontWeight.w800,
-                              color: ink,
+                              color: _mode == _AuthMode.login ? forest : ink,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -216,7 +177,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                     ? (cloud
                                         ? 'La cuenta, las listas y el viaje se guardan en el servidor.'
                                         : 'Guarda tus listas y el costo del viaje en este navegador.')
-                                    : 'Para seguir preparando buenos recuerdos.',
+                                    : 'Tu cuenta guarda tus listas y tu viaje para cualquier dispositivo.',
                             style: const TextStyle(color: Color(0xFF667085), height: 1.35),
                           ),
                           const SizedBox(height: 22),

@@ -15,7 +15,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    _bar = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..forward();
+    _bar = AnimationController(vsync: this, duration: const Duration(milliseconds: 2200))..forward();
   }
 
   @override
@@ -54,8 +54,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     child: LinearProgressIndicator(
                       value: _bar.value,
                       minHeight: 5,
-                      backgroundColor: forestDeep,
-                      color: lime,
+                      backgroundColor: Color(0xFF146B4E),
+                      color: Colors.white,
                     ),
                   ),
                 ),

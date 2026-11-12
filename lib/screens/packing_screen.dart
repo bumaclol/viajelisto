@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/packing_list.dart';
+import '../screens/home_screen.dart';
 import '../state/app_controller.dart';
 import '../widgets/save_status.dart';
 import '../theme/app_theme.dart';
 import '../widgets/name_dialog.dart';
+import '../widgets/trip_cover.dart';
 
 class PackingScreen extends StatefulWidget {
   const PackingScreen({super.key});
@@ -33,30 +35,94 @@ class _PackingScreenState extends State<PackingScreen> {
     final packed = selected?.packedCount ?? 0;
     final percent = total == 0 ? 0 : ((packed / total) * 100).round();
 
+    final trip = controller.trips.first;
+    final headline = trip.destination.trim().isNotEmpty
+        ? trip.destination.trim()
+        : 'Todo listo para salir.';
+    final coverTitle = trip.origin.trim().isNotEmpty && trip.destination.trim().isNotEmpty
+        ? 'De ${trip.origin.trim()} a ${trip.destination.trim()}.'
+        : 'Menos olvidos. Más aventuras.';
+    final listCount = lists.length;
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
       children: [
         const Text(
-          'Mi equipaje',
+          'MI VIAJE EN EQUIPO',
           style: TextStyle(
+            color: forest,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.8,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          headline,
+          style: const TextStyle(
             fontFamily: displayFamily,
-            fontSize: 34,
+            fontSize: 32,
             fontWeight: FontWeight.w700,
             color: forestDeep,
             height: 1.05,
           ),
         ),
+        const SizedBox(height: 14),
+        TripCover(
+          kicker: 'Nuestro próximo viaje',
+          title: coverTitle,
+          onEdit: () => editTrip(context, trip),
+        ),
         const SizedBox(height: 16),
-        const Text(
-          'PARTE CON UNA LISTA',
-          style: TextStyle(
-            color: moss,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.7,
+        Row(
+          children: [
+            const Icon(Icons.luggage_outlined, size: 16, color: moss),
+            const SizedBox(width: 6),
+            const Expanded(
+              child: Text('Equipaje listo', style: TextStyle(color: moss, fontSize: 13)),
+            ),
+            Text('$percent%', style: const TextStyle(color: forest, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '$packed / $total',
+          style: const TextStyle(
+            fontFamily: displayFamily,
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+            color: forestDeep,
+            height: 1,
           ),
         ),
         const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: LinearProgressIndicator(
+            value: total == 0 ? 0 : packed / total,
+            minHeight: 6,
+            backgroundColor: lime,
+            color: forest,
+          ),
+        ),
+        if (total > packed) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Te faltan ${total - packed} ${total - packed == 1 ? 'cosa' : 'cosas'}.',
+            style: const TextStyle(color: moss, height: 1.3),
+          ),
+        ],
+        const SizedBox(height: 22),
+        const Text(
+          'Mi equipaje',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: forestDeep),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          listCount == 1 ? '1 lista para el viaje' : '$listCount listas para el viaje',
+          style: const TextStyle(color: moss),
+        ),
+        const SizedBox(height: 12),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -69,20 +135,38 @@ class _PackingScreenState extends State<PackingScreen> {
               ),
           ],
         ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _createList,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Lista vacía'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: forestDeep,
+            minimumSize: const Size.fromHeight(44),
+            side: const BorderSide(color: line),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
         if (selected != null) ...[
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: line),
+            ),
+            child: Column(
+              children: [
           Row(
             children: [
               Expanded(
                 child: Text(
-                  '${_tripLabel(controller)} · Mi lista',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: forestDeep),
+                  selected.name,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: forestDeep),
                 ),
               ),
-              Text(
-                '$percent%',
-                style: const TextStyle(color: moss, fontWeight: FontWeight.w700),
-              ),
+              Text('$packed/$total', style: const TextStyle(color: moss, fontWeight: FontWeight.w700)),
               IconButton(
                 tooltip: 'Cambiar nombre',
                 visualDensity: VisualDensity.compact,
@@ -97,23 +181,24 @@ class _PackingScreenState extends State<PackingScreen> {
                 },
                 icon: const Icon(Icons.edit_outlined, size: 18, color: moss),
               ),
+              IconButton(
+                tooltip: 'Borrar lista',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _confirmDeleteList(selected),
+                icon: const Icon(Icons.delete_outline, size: 18, color: moss),
+              ),
             ],
           ),
-          Text(
-            '$packed de $total empacados',
-            style: const TextStyle(color: moss),
-          ),
-          const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(99),
             child: LinearProgressIndicator(
               value: total == 0 ? 0 : packed / total,
-              minHeight: 6,
-              backgroundColor: line,
+              minHeight: 4,
+              backgroundColor: lime,
               color: forest,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           if (selected.items.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
@@ -149,7 +234,7 @@ class _PackingScreenState extends State<PackingScreen> {
             controller: _itemController,
             textCapitalization: TextCapitalization.sentences,
             decoration: InputDecoration(
-              hintText: 'Agregar ítem',
+              hintText: 'Agregar artículo…',
               filled: true,
               fillColor: Colors.white,
               prefixIcon: const Icon(Icons.add, color: forest),
@@ -169,14 +254,11 @@ class _PackingScreenState extends State<PackingScreen> {
             ),
             onSubmitted: (_) => _addItem(selected.id),
           ),
+              ],
+            ),
+          ),
         ],
         const SizedBox(height: 8),
-        TextButton.icon(
-          onPressed: _createList,
-          icon: const Icon(Icons.add, size: 18),
-          label: const Text('Crear tu propia lista'),
-          style: TextButton.styleFrom(foregroundColor: forestDeep),
-        ),
         Center(
           child: TextButton(
             onPressed: _confirmRestore,
@@ -188,19 +270,32 @@ class _PackingScreenState extends State<PackingScreen> {
     );
   }
 
-  String _tripLabel(AppController controller) {
-    final trip = controller.trips.first;
-    if (trip.destination.trim().isNotEmpty) return trip.destination.trim();
-    if (trip.name.trim().isNotEmpty) return trip.name.trim();
-    return 'Tu viaje';
-  }
-
   PackingList? _current(List<PackingList> lists) {
     if (lists.isEmpty) return null;
     for (final list in lists) {
       if (list.id == _selectedId) return list;
     }
     return lists.first;
+  }
+
+  Future<void> _confirmDeleteList(PackingList list) async {
+    final remove = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Borrar lista'),
+          content: Text('Se va a quitar ${list.name}. Los elementos de esa lista también se van.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Borrar')),
+          ],
+        );
+      },
+    );
+    if (remove == true && mounted) {
+      await context.read<AppController>().deleteList(list.id);
+      if (mounted) setState(() => _selectedId = null);
+    }
   }
 
   Future<void> _confirmDelete(String listId, String itemId, String name) async {
@@ -270,7 +365,7 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? forest : Colors.white,
+      color: selected ? lime : Colors.white,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
@@ -284,7 +379,7 @@ class _Chip extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              color: selected ? Colors.white : forestDeep,
+              color: forestDeep,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -340,27 +435,24 @@ class _ItemRow extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              name,
-              style: TextStyle(
-                color: packed ? moss : forestDeep,
-                decoration: packed ? TextDecoration.lineThrough : null,
-                fontSize: 16,
+            child: InkWell(
+              onTap: onRename,
+              child: Text(
+                name,
+                style: TextStyle(
+                  color: packed ? moss : forestDeep,
+                  decoration: packed ? TextDecoration.lineThrough : null,
+                  fontSize: 16,
+                ),
               ),
             ),
           ),
           QuantityStepper(quantity: quantity, onChanged: onQuantity),
-          PopupMenuButton<String>(
-            tooltip: 'Más',
-            icon: const Icon(Icons.more_horiz, color: moss, size: 18),
-            onSelected: (value) {
-              if (value == 'edit') onRename();
-              if (value == 'delete') onDelete();
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'edit', child: Text('Editar')),
-              PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-            ],
+          IconButton(
+            tooltip: 'Quitar',
+            visualDensity: VisualDensity.compact,
+            onPressed: onDelete,
+            icon: const Icon(Icons.delete_outline, color: moss, size: 18),
           ),
         ],
       ),

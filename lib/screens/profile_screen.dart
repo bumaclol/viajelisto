@@ -36,11 +36,27 @@ class ProfileScreen extends StatelessWidget {
         ),
         const SizedBox(height: 18),
         if (!controller.signedIn) ...[
-          const Text(
-            'Puedes preparar el viaje sin cuenta. Lo que anotes se guarda solo en este navegador.',
-            style: TextStyle(color: moss, height: 1.35),
+          const SizedBox(height: 8),
+          const Center(
+            child: CircleAvatar(
+              radius: 36,
+              backgroundColor: lime,
+              child: Icon(Icons.person_outline_rounded, color: forest, size: 34),
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
+          const Text(
+            'Un viaje sin olvidos.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: forestDeep),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Tus listas y tu viaje están guardados en este dispositivo. Entra a tu cuenta para tenerlos también en otros dispositivos.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: moss, height: 1.4),
+          ),
+          const SizedBox(height: 16),
           const SaveStatus(),
           const SizedBox(height: 12),
           FilledButton(

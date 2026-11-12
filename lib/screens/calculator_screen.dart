@@ -14,6 +14,7 @@ import '../services/share_text.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../widgets/trip_cover.dart';
 
 class CalculatorScreen extends StatefulWidget {
   const CalculatorScreen({super.key});
@@ -107,46 +108,90 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final trip = context.watch<AppController>().trips.first;
     final listName = trip.title;
 
+    final readyNow = preview is CostReady ? preview as CostReady : null;
+    final shareNow = readyNow == null ? '\$0' : _shareNow(readyNow.result);
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
       children: [
         const Text(
-          'Gastos del viaje',
+          'MI VIAJE EN EQUIPO',
+          style: TextStyle(
+            color: forest,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.8,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Las cuentas, claras.',
           style: TextStyle(
             fontFamily: displayFamily,
-            fontSize: 34,
+            fontSize: 32,
             fontWeight: FontWeight.w700,
             color: forestDeep,
             height: 1.05,
           ),
         ),
         const SizedBox(height: 14),
+        TripCover(
+          kicker: 'Nuestro próximo viaje',
+          title: 'Cada uno paga lo justo.',
+          onEdit: () => editTrip(context, trip),
+        ),
+        const SizedBox(height: 16),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(
-              child: Text(
-                trip.destination.trim().isNotEmpty
-                    ? '${trip.destination.trim()} · ${trip.includesReturn ? 'Ida y vuelta' : 'Solo ida'}'
-                    : listName,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: forestDeep),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Por persona', style: TextStyle(color: moss, fontSize: 13)),
+                  const SizedBox(height: 2),
+                  Text(
+                    shareNow,
+                    style: const TextStyle(
+                      fontFamily: displayFamily,
+                      fontSize: 36,
+                      fontWeight: FontWeight.w700,
+                      color: forestDeep,
+                      height: 1,
+                    ),
+                  ),
+                ],
               ),
             ),
-            TextButton(
-              onPressed: () => editTrip(context, trip),
-              style: TextButton.styleFrom(foregroundColor: forest, padding: EdgeInsets.zero),
-              child: const Text('Editar', style: TextStyle(fontWeight: FontWeight.w700)),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  trip.destination.trim().isNotEmpty ? trip.destination.trim() : listName,
+                  style: const TextStyle(color: moss, fontSize: 13),
+                ),
+                Text(
+                  '${passengers < 1 ? 0 : passengers} pasajeros',
+                  style: const TextStyle(color: moss, fontSize: 13),
+                ),
+              ],
             ),
           ],
         ),
-        const SizedBox(height: 14),
-        const Text(
-          'Calculamos, tú disfrutas.',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: forestDeep),
-        ),
-        const SizedBox(height: 2),
-        const Text(
-          'Montos en pesos chilenos (CLP).',
-          style: TextStyle(color: moss),
+        const SizedBox(height: 18),
+        const Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Viaje y gastos', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: forestDeep)),
+                  SizedBox(height: 2),
+                  Text('Las cuentas del grupo', style: TextStyle(color: moss)),
+                ],
+              ),
+            ),
+            Text('Moneda CLP', style: TextStyle(color: moss, fontSize: 13)),
+          ],
         ),
         const SizedBox(height: 8),
         CheckboxListTile(
@@ -208,6 +253,13 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         _DetailCard(preview: preview),
       ],
     );
+  }
+
+  String _shareNow(TripResult result) {
+    final shares = splitTotal(result.total.round(), result.passengers);
+    if (shares.isEmpty) return formatMoney(result.perPassenger);
+    if (shares.toSet().length == 1) return formatMoney(shares.first);
+    return 'Desde ${formatMoney(shares.last)}';
   }
 
   void _onChanged(String _) => _persist();
@@ -377,8 +429,9 @@ class _SummaryCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: lime,
-        borderRadius: BorderRadius.circular(22),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: line),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -430,27 +483,32 @@ class _SummaryCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(measureError!, style: const TextStyle(color: forestDeep, height: 1.3, fontWeight: FontWeight.w600)),
           ],
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: forest, borderRadius: BorderRadius.circular(14)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Cada uno paga', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(
+                  result == null ? '\$0' : _shareLabel(result),
+                  style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w800, height: 1),
+                ),
+                if (result != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'de ${formatMoney(result.total)} entre ${result.passengers}',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ],
+              ],
+            ),
+          ),
           if (result != null) ...[
             const SizedBox(height: 14),
-            const Text(
-              'POR PERSONA',
-              style: TextStyle(
-                color: forestDeep,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-                letterSpacing: 0.6,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _shareLabel(result),
-              style: const TextStyle(
-                color: forestDeep,
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                height: 1,
-              ),
-            ),
             if (difference != null) ...[
               const SizedBox(height: 6),
               Text(
@@ -537,7 +595,7 @@ class _FormCard extends StatelessWidget {
       children: [
           Row(
             children: [
-              Expanded(child: _SoftField(controller: distance, label: 'Distancia total', suffix: 'km', onChanged: onChanged)),
+              Expanded(child: _SoftField(controller: distance, label: 'Kilómetros', suffix: 'km', onChanged: onChanged)),
               const SizedBox(width: 12),
               Expanded(
                 child: _SoftField(controller: consumption, label: 'Rendimiento', suffix: 'km/L', onChanged: onChanged),
@@ -550,7 +608,7 @@ class _FormCard extends StatelessWidget {
               Expanded(
                 child: _SoftField(
                   controller: fuelPrice,
-                  label: 'Precio bencina',
+                  label: 'Precio bencina (\$/L)',
                   suffix: '/ L',
                   onChanged: onChanged,
                 ),
@@ -571,7 +629,7 @@ class _FormCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _SoftField(controller: tolls, label: 'Peajes', suffix: 'CLP', onChanged: onChanged)),
+              Expanded(child: _SoftField(controller: tolls, label: 'Peajes (\$)', suffix: 'CLP', onChanged: onChanged)),
               const SizedBox(width: 12),
               Expanded(
                 child: _SoftField(
@@ -586,7 +644,7 @@ class _FormCard extends StatelessWidget {
           const SizedBox(height: 12),
           _SoftField(
             controller: budget,
-            label: 'Presupuesto por persona',
+            label: 'Presupuesto por persona (\$)',
             helper: 'Te avisamos si el viaje se pasa de este monto.',
             onChanged: onChanged,
           ),
@@ -687,8 +745,8 @@ class _DetailCard extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: () => _showShareText(context, result),
               style: FilledButton.styleFrom(
-                backgroundColor: forest,
-                foregroundColor: Colors.white,
+                backgroundColor: lime,
+                foregroundColor: forestDeep,
                 minimumSize: const Size.fromHeight(52),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               ),

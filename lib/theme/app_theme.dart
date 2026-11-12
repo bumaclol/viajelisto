@@ -7,14 +7,14 @@ const pageBottom = Color(0xFFF4F7FB);
 const good = Color(0xFF178A4A);
 const warn = Color(0xFFD14343);
 
-const forest = Color(0xFF173E35);
-const forestDeep = Color(0xFF102923);
-const lime = Color(0xFFD9EF88);
-const paper = Color(0xFFFBF8F3);
-const moss = Color(0xFF5E6A62);
-const line = Color(0xFFE4EAE3);
+const forest = Color(0xFF268565);
+const forestDeep = Color(0xFF252A27);
+const lime = Color(0xFFD8EEE3);
+const paper = Color(0xFFF1F4F2);
+const moss = Color(0xFF636B66);
+const line = Color(0xFFDBDFDD);
 
-const displayFamily = 'Inter';
+const displayFamily = 'Sora';
 
 ThemeData buildAppTheme() {
   return ThemeData(
@@ -25,23 +25,23 @@ ThemeData buildAppTheme() {
       surface: Colors.white,
     ),
     scaffoldBackgroundColor: paper,
-    fontFamily: 'Inter',
+    fontFamily: 'Manrope',
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: const Color(0xFFF3F5F8),
-      hintStyle: const TextStyle(color: Color(0xFF9AA3B2)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      fillColor: Colors.white,
+      hintStyle: const TextStyle(color: moss),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: line),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: line),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: blue, width: 1.4),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: forest, width: 1.4),
       ),
     ),
   );
