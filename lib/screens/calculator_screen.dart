@@ -654,6 +654,8 @@ class _FormCard extends StatelessWidget {
   }
 }
 
+enum _ShareChannel { whatsapp, mail }
+
 class _DetailCard extends StatelessWidget {
   const _DetailCard({required this.preview});
 
@@ -758,9 +760,51 @@ class _DetailCard extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => _shareExternal(context, result, _ShareChannel.whatsapp),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: forest,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  icon: const Icon(Icons.chat_rounded, size: 18),
+                  label: Text(tr(context, 'WhatsApp'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _shareExternal(context, result, _ShareChannel.mail),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: forestDeep,
+                    minimumSize: const Size.fromHeight(48),
+                    side: const BorderSide(color: line),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  icon: const Icon(Icons.mail_outline_rounded, size: 18),
+                  label: Text(tr(context, 'Correo'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  void _shareExternal(BuildContext context, TripResult result, _ShareChannel channel) {
+    final controller = context.read<AppController>();
+    final text = buildShareText(result, lists: controller.lists, trip: controller.trips.first);
+    final encoded = Uri.encodeComponent(text);
+    final url = channel == _ShareChannel.whatsapp
+        ? 'https://wa.me/?text=$encoded'
+        : 'mailto:?subject=${Uri.encodeComponent('Resumen del viaje')}&body=$encoded';
+    openExternalUrl(url);
   }
 
   Future<void> _showShareText(BuildContext context, TripResult result) async {

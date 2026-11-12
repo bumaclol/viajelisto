@@ -17,3 +17,11 @@ Future<bool> sharePlainText(String text) async {
     return false;
   }
 }
+
+void openExternalUrl(String url) {
+  if (url.startsWith('mailto:')) {
+    web.window.location.assign(url);
+    return;
+  }
+  web.window.open(url, '_blank', 'noopener,noreferrer');
+}

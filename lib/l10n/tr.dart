@@ -55,5 +55,7 @@ const _english = <String, String>{
   'Seguridad': 'Security',
   'Ayuda': 'Help',
   'Cerrar sesión': 'Log out',
+  'WhatsApp': 'WhatsApp',
+  'Correo': 'Email',
   'Español': 'Spanish',
 };
