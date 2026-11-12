@@ -20,12 +20,13 @@ from email.message import EmailMessage
 from pathlib import Path
 from fastapi import FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 GOOGLE_CLIENT_ID = "798614168486-2f1rh7quro0s2ea52hd6gf9aptotsfp0.apps.googleusercontent.com"
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "datos" / "nube.db"
+WEB_DIR = ROOT / "publico"
 _LOCK = threading.Lock()
 
 app = FastAPI(title="TravelEquality")
@@ -275,8 +276,43 @@ def startup() -> None:
     init_db()
 
 
+def archivo_web(ruta: str) -> Path | None:
+    raiz = WEB_DIR.resolve()
+    limpio = ruta.strip("/")
+    destino = raiz / limpio if limpio else raiz / "index.html"
+    destino = destino.resolve()
+    try:
+        destino.relative_to(raiz)
+    except ValueError:
+        return None
+    if destino.is_dir():
+        destino = destino / "index.html"
+    if destino.is_file():
+        return destino
+    return None
+
+
+def responder_archivo(path: Path) -> FileResponse:
+    tipos = {
+        ".js": "application/javascript",
+        ".mjs": "application/javascript",
+        ".json": "application/json",
+        ".wasm": "application/wasm",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".html": "text/html; charset=utf-8",
+    }
+    media = tipos.get(path.suffix.lower())
+    if media is None:
+        return FileResponse(path)
+    return FileResponse(path, media_type=media)
+
+
 @app.get("/")
-def inicio() -> dict:
+def inicio():
+    pagina = archivo_web("")
+    if pagina is not None:
+        return responder_archivo(pagina)
     return {
         "ok": True,
         "mensaje": "Servidor de TravelEquality en marcha.",
@@ -651,6 +687,17 @@ def guardar_datos(body: DatosIn, authorization: str | None = Header(default=None
             (row["id"], lists_json, trips_json),
         )
     return {"ok": True}
+
+
+@app.get("/{asset_path:path}")
+def pagina(asset_path: str):
+    encontrado = archivo_web(asset_path)
+    if encontrado is not None:
+        return responder_archivo(encontrado)
+    indice = WEB_DIR / "index.html"
+    if indice.is_file() and "." not in Path(asset_path).name:
+        return responder_archivo(indice)
+    return fail(404, "No encontrado.")
 
 
 # ==========================================
