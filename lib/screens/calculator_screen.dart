@@ -135,6 +135,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           ),
         ),
         const SizedBox(height: 14),
+        _ShareBar(result: readyNow?.result),
+        const SizedBox(height: 14),
         TripCover(
           kicker: tr(context, 'Nuestro próximo viaje'),
           title: tr(context, 'Cada uno paga lo justo.'),
@@ -656,6 +658,93 @@ class _FormCard extends StatelessWidget {
 
 enum _ShareChannel { whatsapp, mail }
 
+class _ShareBar extends StatelessWidget {
+  const _ShareBar({required this.result});
+
+  final TripResult? result;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: () => _openShare(context, result, _ShareChannel.whatsapp),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF1FA855),
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(52),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            icon: const Icon(Icons.chat_rounded, size: 20),
+            label: Text(
+              tr(context, 'Enviar por WhatsApp'),
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => _openShare(context, result, _ShareChannel.mail),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: forestDeep,
+              backgroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(52),
+              side: const BorderSide(color: forestDeep, width: 1.4),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            icon: const Icon(Icons.mail_outline_rounded, size: 20),
+            label: Text(
+              tr(context, 'Enviar por correo'),
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+void _openShare(BuildContext context, TripResult? result, _ShareChannel channel) {
+  final controller = context.read<AppController>();
+  final trip = controller.trips.first;
+  final text = result == null
+      ? _draftShareText(controller.lists, trip)
+      : buildShareText(result, lists: controller.lists, trip: trip);
+  final encoded = Uri.encodeComponent(text);
+  final url = channel == _ShareChannel.whatsapp
+      ? 'https://wa.me/?text=$encoded'
+      : 'mailto:?subject=${Uri.encodeComponent('Resumen del viaje')}&body=$encoded';
+  openExternalUrl(url);
+}
+
+String _draftShareText(List<PackingList> lists, TripDraft trip) {
+  final buffer = StringBuffer()..writeln('🚗 Resumen del viaje');
+  if (trip.name.trim().isNotEmpty) buffer.writeln(trip.name.trim());
+  if (trip.route.isNotEmpty) buffer.writeln(trip.route);
+  if (trip.dates.isNotEmpty) buffer.writeln(trip.dates);
+  final packed = <String>[];
+  for (final list in lists) {
+    for (final item in list.items) {
+      if (!item.packed) continue;
+      packed.add(item.quantity > 1 ? '• ${item.name} x${item.quantity}' : '• ${item.name}');
+    }
+  }
+  if (packed.isNotEmpty) {
+    buffer
+      ..writeln()
+      ..writeln('Equipaje marcado:')
+      ..writeln(packed.join('\n'));
+  }
+  buffer
+    ..writeln()
+    ..writeln('Los gastos todavía no están calculados.');
+  return buffer.toString().trimRight();
+}
+
 class _DetailCard extends StatelessWidget {
   const _DetailCard({required this.preview});
 
@@ -760,51 +849,9 @@ class _DetailCard extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => _shareExternal(context, result, _ShareChannel.whatsapp),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: forest,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  icon: const Icon(Icons.chat_rounded, size: 18),
-                  label: Text(tr(context, 'WhatsApp'), style: const TextStyle(fontWeight: FontWeight.w700)),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _shareExternal(context, result, _ShareChannel.mail),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: forestDeep,
-                    minimumSize: const Size.fromHeight(48),
-                    side: const BorderSide(color: line),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  icon: const Icon(Icons.mail_outline_rounded, size: 18),
-                  label: Text(tr(context, 'Correo'), style: const TextStyle(fontWeight: FontWeight.w700)),
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );
-  }
-
-  void _shareExternal(BuildContext context, TripResult result, _ShareChannel channel) {
-    final controller = context.read<AppController>();
-    final text = buildShareText(result, lists: controller.lists, trip: controller.trips.first);
-    final encoded = Uri.encodeComponent(text);
-    final url = channel == _ShareChannel.whatsapp
-        ? 'https://wa.me/?text=$encoded'
-        : 'mailto:?subject=${Uri.encodeComponent('Resumen del viaje')}&body=$encoded';
-    openExternalUrl(url);
   }
 
   Future<void> _showShareText(BuildContext context, TripResult result) async {
