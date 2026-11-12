@@ -25,8 +25,10 @@ class TripCover extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             Image.asset(
-              'assets/coastal-road.jpg',
+              'assets/torres-paine.jpg',
               fit: BoxFit.cover,
+              alignment: const Alignment(0, -0.45),
+              semanticLabel: 'Lago y montañas de Torres del Paine',
               errorBuilder: (context, error, stack) => const ColoredBox(color: forest),
             ),
             const DecoratedBox(
