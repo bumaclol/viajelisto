@@ -8,11 +8,17 @@ class TripCover extends StatelessWidget {
     required this.kicker,
     required this.title,
     this.onEdit,
+    this.imageAsset = 'assets/coastal-road.jpg',
+    this.imageLabel = 'Camino costero entre montañas y el océano',
+    this.imageAlignment = Alignment.center,
   });
 
   final String kicker;
   final String title;
   final VoidCallback? onEdit;
+  final String imageAsset;
+  final String imageLabel;
+  final Alignment imageAlignment;
 
   @override
   Widget build(BuildContext context) {
@@ -25,10 +31,10 @@ class TripCover extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             Image.asset(
-              'assets/torres-paine.jpg',
+              imageAsset,
               fit: BoxFit.cover,
-              alignment: const Alignment(0, -0.45),
-              semanticLabel: 'Lago y montañas de Torres del Paine',
+              alignment: imageAlignment,
+              semanticLabel: imageLabel,
               errorBuilder: (context, error, stack) => const ColoredBox(color: forest),
             ),
             const DecoratedBox(

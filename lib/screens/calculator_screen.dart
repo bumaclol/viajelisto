@@ -137,6 +137,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         TripCover(
           kicker: 'Nuestro próximo viaje',
           title: 'Cada uno paga lo justo.',
+          imageAsset: 'assets/torres-paine.jpg',
+          imageLabel: 'Lago y montañas de Torres del Paine',
+          imageAlignment: const Alignment(0, -0.45),
           onEdit: () => editTrip(context, trip),
         ),
         const SizedBox(height: 16),

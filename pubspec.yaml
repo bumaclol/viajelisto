@@ -69,6 +69,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/coastal-road.jpg
     - assets/torres-paine.jpg
 
   fonts:
