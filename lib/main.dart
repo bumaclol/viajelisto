@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/home_shell.dart';
-import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/cloud_api.dart';
 import 'services/storage_service.dart';
@@ -11,7 +10,7 @@ import 'theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(ViajeListoApp(cloud: CloudApi('http://127.0.0.1:8088')));
+  runApp(ViajeListoApp(cloud: CloudApi('https://viajelisto.onrender.com')));
 }
 
 class ViajeListoApp extends StatelessWidget {
@@ -55,7 +54,6 @@ class _BootScreenState extends State<_BootScreen> {
   Widget build(BuildContext context) {
     final controller = context.watch<AppController>();
     if (controller.loading || _hold) return const SplashScreen();
-    if (!controller.signedIn) return const LoginScreen();
     return const HomeShell();
   }
 }

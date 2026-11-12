@@ -68,6 +68,7 @@ CostPreview previewTrip({
   required int passengers,
   String liters = '',
   String otherExpenses = '',
+  List<String> extraAmounts = const [],
 }) {
   final distanceValue = _read(distance, allowEmpty: true);
   final consumptionValue = _read(consumption, allowEmpty: true);
@@ -76,6 +77,7 @@ CostPreview previewTrip({
   final tollValue = _read(tolls, allowEmpty: true);
   final otherValue = _read(otherExpenses, allowEmpty: true);
   final budgetValue = _read(budget, allowEmpty: true, emptyMeansNull: true);
+  final extraReads = extraAmounts.map((amount) => _read(amount, allowEmpty: true)).toList();
 
   final reads = [
     distanceValue,
@@ -85,6 +87,7 @@ CostPreview previewTrip({
     tollValue,
     otherValue,
     budgetValue,
+    ...extraReads,
   ];
   if (reads.any((read) => read.invalid)) {
     return CostInvalid('Revisa los números. Ejemplo: 12,5 o 1.350.');
@@ -100,10 +103,11 @@ CostPreview previewTrip({
 
   final price = priceValue.value!;
   final toll = tollValue.value ?? 0;
-  final other = otherValue.value ?? 0;
+  final namedExtras = extraReads.fold<double>(0, (sum, read) => sum + (read.value ?? 0));
+  final other = (otherValue.value ?? 0) + namedExtras;
   final limit = budgetValue.value;
   if (price < 0 || toll < 0 || other < 0 || (limit != null && limit < 0)) {
-    return CostInvalid('Usa solo cantidades desde 0 hacia arriba.');
+    return CostInvalid('Los gastos no pueden ser negativos.');
   }
 
   final enteredLiters = litersValue.value ?? 0;
@@ -143,6 +147,18 @@ CostPreview previewTrip({
       budget: limit,
     ),
   );
+}
+
+/// Litros para ir de un punto a otro: kilómetros ÷ rendimiento.
+/// No usa el precio, así que se puede mostrar antes de calcular la plata.
+double? litersFor({required String distance, required String consumption}) {
+  final km = _read(distance, allowEmpty: true);
+  final rate = _read(consumption, allowEmpty: true);
+  if (km.invalid || rate.invalid) return null;
+  final kilometers = km.value ?? 0;
+  final perLiter = rate.value ?? 0;
+  if (kilometers <= 0 || perLiter <= 0) return null;
+  return kilometers / perLiter;
 }
 
 class _Parsed {

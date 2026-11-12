@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
 import '../widgets/profile_avatar.dart';
+import '../widgets/save_status.dart';
 import 'edit_profile_screen.dart';
+import 'login_screen.dart';
 import 'profile_settings_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -22,57 +24,163 @@ class ProfileScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
       children: [
-        Center(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 4),
-              boxShadow: const [
-                BoxShadow(color: Color(0x1A172033), blurRadius: 18, offset: Offset(0, 8)),
-              ],
-            ),
-            child: ProfileAvatar(
-              name: name,
-              photo: controller.sessionPhoto,
-              radius: 72,
-            ),
+        const Text(
+          'Mi cuenta',
+          style: TextStyle(
+            fontFamily: displayFamily,
+            fontSize: 34,
+            fontWeight: FontWeight.w700,
+            color: forestDeep,
+            height: 1.05,
           ),
         ),
-        const SizedBox(height: 16),
-        Text(
-          name.isEmpty ? 'Tu cuenta' : name,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: ink, height: 1.1),
+        const SizedBox(height: 18),
+        if (!controller.signedIn) ...[
+          const Text(
+            'Puedes preparar el viaje sin cuenta. Lo que anotes se guarda solo en este navegador.',
+            style: TextStyle(color: moss, height: 1.35),
+          ),
+          const SizedBox(height: 12),
+          const SaveStatus(),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+              );
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: forest,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(52),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            child: const Text('Iniciar sesión', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(height: 18),
+        ],
+        if (controller.signedIn) ...[
+        const Text(
+          'SESIÓN INICIADA',
+          style: TextStyle(
+            color: moss,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.7,
+          ),
         ),
         const SizedBox(height: 8),
-        _ContactLine(icon: Icons.mail_outline_rounded, text: email.isEmpty ? 'Sin correo' : email),
-        const SizedBox(height: 4),
-        _ContactLine(
-          icon: Icons.phone_outlined,
-          text: phone.isEmpty ? 'Sin teléfono' : phone,
+        Row(
+          children: [
+            ProfileAvatar(name: name, photo: controller.sessionPhoto, radius: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name.isEmpty ? 'Tu cuenta' : name,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: forestDeep),
+                  ),
+                  Text(
+                    email.isEmpty ? 'Sin correo' : email,
+                    style: const TextStyle(color: moss),
+                  ),
+                  Text(
+                    phone.isEmpty ? 'Sin teléfono' : phone,
+                    style: const TextStyle(color: moss),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        if (controller.usesCloud) ...[
-          const SizedBox(height: 4),
-          const _ContactLine(icon: Icons.cloud_outlined, text: 'Listas y viaje en el servidor'),
-        ],
-        const SizedBox(height: 18),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(builder: (_) => const EditProfileScreen()),
               );
             },
-            style: OutlinedButton.styleFrom(
-              foregroundColor: blue,
-              side: const BorderSide(color: blue),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            style: TextButton.styleFrom(
+              foregroundColor: forest,
+              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
             ),
-            icon: const Icon(Icons.edit_outlined),
-            label: const Text('Editar perfil', style: TextStyle(fontWeight: FontWeight.w700)),
+            child: const Text('Editar perfil', style: TextStyle(fontWeight: FontWeight.w700)),
           ),
+        ),
+        const SaveStatus(),
+        const SizedBox(height: 18),
+        if (controller.cloudSave == CloudSave.saved)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: lime,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.cloud_done_outlined, color: forestDeep),
+                    SizedBox(width: 8),
+                    Text(
+                      'Todo al salvo',
+                      style: TextStyle(fontWeight: FontWeight.w800, color: forestDeep, fontSize: 18),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Tus listas y tu viaje están en tu cuenta. Inicia sesión en otro dispositivo y sigue donde quedaste.',
+                  style: TextStyle(color: forestDeep, height: 1.3),
+                ),
+              ],
+            ),
+          ),
+        if (controller.cloudSave == CloudSave.saved) const SizedBox(height: 18),
+        ],
+        const Text(
+          'Dónde está guardado',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: forestDeep),
+        ),
+        const SizedBox(height: 8),
+        _StorageRow(
+          icon: Icons.language_rounded,
+          title: 'En este navegador',
+          subtitle:
+              '${_pieces(controller.lists.length, 'lista', 'listas')} y ${_pieces(controller.trips.length, 'viaje', 'viajes')} guardados',
+        ),
+        if (controller.cloudSave == CloudSave.saved)
+          const _StorageRow(
+            icon: Icons.cloud_outlined,
+            title: 'En tu cuenta',
+            subtitle: 'El último guardado remoto se completó',
+          ),
+        if (controller.cloudSave == CloudSave.failed)
+          _StorageRow(
+            icon: Icons.cloud_off_outlined,
+            title: 'No se guardó en la cuenta',
+            subtitle: controller.cloudSaveDetail ?? 'Revisa la conexión e inténtalo de nuevo.',
+          ),
+        if (controller.cloudSave == CloudSave.saving)
+          const _StorageRow(
+            icon: Icons.cloud_upload_outlined,
+            title: 'Guardando',
+            subtitle: 'Todavía no está en la cuenta',
+          ),
+        const SizedBox(height: 22),
+        const Text(
+          'Por ahora, nos vemos en la web',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: forestDeep),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Usa TravelEquality desde tu navegador. La versión para instalar en el teléfono todavía no está disponible.',
+          style: TextStyle(color: moss, height: 1.35),
         ),
         const SizedBox(height: 28),
         const Text(
@@ -146,15 +254,17 @@ class ProfileScreen extends StatelessWidget {
                 subtitle: controller.notificationsEnabled ? 'Activadas' : 'Desactivadas',
                 onTap: () => _open(context, const NotificationsSettingsScreen()),
               ),
-              const Divider(height: 1, indent: 64),
-              _SettingTile(
-                icon: Icons.logout_rounded,
-                title: 'Cerrar sesión',
-                subtitle: 'Salir de tu cuenta',
-                iconColor: warn,
-                titleColor: warn,
-                onTap: () => _confirmLogout(context),
-              ),
+              if (controller.signedIn) ...[
+                const Divider(height: 1, indent: 64),
+                _SettingTile(
+                  icon: Icons.logout_rounded,
+                  title: 'Cerrar sesión',
+                  subtitle: 'Salir de tu cuenta',
+                  iconColor: warn,
+                  titleColor: warn,
+                  onTap: () => _confirmLogout(context),
+                ),
+              ],
             ],
           ),
         ),
@@ -186,30 +296,44 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-class _ContactLine extends StatelessWidget {
-  const _ContactLine({required this.icon, required this.text});
+class _StorageRow extends StatelessWidget {
+  const _StorageRow({required this.icon, required this.title, required this.subtitle});
 
   final IconData icon;
-  final String text;
+  final String title;
+  final String subtitle;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, size: 16, color: const Color(0xFF667085)),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF667085), fontSize: 15),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: line),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: forest, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w700, color: forestDeep)),
+                Text(subtitle, style: const TextStyle(color: moss, fontSize: 13)),
+              ],
+            ),
           ),
-        ),
-      ],
+          const Icon(Icons.check_rounded, color: forest, size: 18),
+        ],
+      ),
     );
   }
 }
+
+String _pieces(int count, String one, String many) => '$count ${count == 1 ? one : many}';
 
 class _SettingTile extends StatelessWidget {
   const _SettingTile({
@@ -217,7 +341,7 @@ class _SettingTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
-    this.iconColor = blue,
+    this.iconColor = forest,
     this.titleColor = ink,
   });
 
@@ -233,7 +357,7 @@ class _SettingTile extends StatelessWidget {
     return ListTile(
       onTap: onTap,
       leading: CircleAvatar(
-        backgroundColor: const Color(0xFFE7F0FF),
+        backgroundColor: const Color(0xFFE7F3D8),
         child: Icon(icon, color: iconColor, size: 20),
       ),
       title: Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: titleColor)),

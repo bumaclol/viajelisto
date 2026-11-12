@@ -1,18 +1,29 @@
+from __future__ import annotations
+
 """Servidor de TravelEquality: cuentas, listas y viaje."""
 
+# ==========================================
+# 1. IMPORTACIONES Y CONFIGURACIÓN INICIAL
+# ==========================================
 import hashlib
 import json
+import os
 import secrets
+import smtplib
 import sqlite3
 import threading
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from pathlib import Path
-
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+GOOGLE_CLIENT_ID = "798614168486-2f1rh7quro0s2ea52hd6gf9aptotsfp0.apps.googleusercontent.com"
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "datos" / "nube.db"
 _LOCK = threading.Lock()
@@ -20,12 +31,54 @@ _LOCK = threading.Lock()
 app = FastAPI(title="TravelEquality")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+_ATTEMPTS: dict[str, list[datetime]] = {}
+_WINDOW = timedelta(minutes=10)
+_MAX_ATTEMPTS = 8
+_MISMO_AVISO = "Si el correo está registrado, el código queda listo."
 
+
+def client_key(request: Request, action: str) -> str:
+    forwarded = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for") or ""
+    ip = forwarded.split(",")[0].strip()
+    if not ip and request.client is not None:
+        ip = request.client.host
+    return f"{action}:{ip or 'local'}"
+
+
+def _recent(request: Request, action: str) -> tuple[str, list[datetime]]:
+    key = client_key(request, action)
+    moment = now()
+    recent = [item for item in _ATTEMPTS.get(key, []) if moment - item < _WINDOW]
+    return key, recent
+
+
+def blocked(request: Request, action: str) -> bool:
+    key, recent = _recent(request, action)
+    _ATTEMPTS[key] = recent
+    return len(recent) >= _MAX_ATTEMPTS
+
+
+def note_attempt(request: Request, action: str) -> None:
+    key, recent = _recent(request, action)
+    recent.append(now())
+    _ATTEMPTS[key] = recent
+
+
+def limited(request: Request, action: str) -> bool:
+    if blocked(request, action):
+        return True
+    note_attempt(request, action)
+    return False
+
+
+# ==========================================
+# 2. UTILIDADES DE TIEMPO Y FECHAS
+# ==========================================
 def now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -34,6 +87,9 @@ def stamp(moment: datetime) -> str:
     return moment.isoformat()
 
 
+# ==========================================
+# 3. CONEXIÓN E INICIALIZACIÓN DE LA BASE DE DATOS
+# ==========================================
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH)
@@ -69,6 +125,9 @@ def init_db() -> None:
         )
 
 
+# ==========================================
+# 4. UTILIDADES DE SEGURIDAD Y VALIDACIONES
+# ==========================================
 def fail(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status)
 
@@ -103,6 +162,9 @@ def public_user(row: sqlite3.Row) -> dict:
     }
 
 
+# ==========================================
+# 5. GESTIÓN DE TOKENS DE SESIÓN
+# ==========================================
 def issue_token(connection: sqlite3.Connection, user_id: int, kind: str, hours: int) -> str:
     connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, kind))
     token = secrets.token_urlsafe(9)
@@ -147,10 +209,21 @@ def user_from_header(authorization: str | None) -> sqlite3.Row | None:
         return None if found is None else dict(found)
 
 
+# ==========================================
+# 6. MODELOS DE PYDANTIC (ESQUEMAS DE ENTRADA)
+# ==========================================
 class RegistroIn(BaseModel):
     name: str
     email: str
     password: str
+
+
+class SocialIn(BaseModel):
+    provider: str
+
+
+class GoogleIn(BaseModel):
+    id_token: str
 
 
 class EntrarIn(BaseModel):
@@ -181,14 +254,35 @@ class FotoIn(BaseModel):
     photo: str | None = None
 
 
+class CorreoIn(BaseModel):
+    email: str = ""
+    correo: str = ""
+
+    def direccion(self) -> str:
+        return (self.correo or self.email).strip().lower()
+
+
 class DatosIn(BaseModel):
     listas: list
     viajes: list
 
 
+# ==========================================
+# 7. EVENTO DE INICIO Y RUTA DE SALUD
+# ==========================================
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+
+
+@app.get("/")
+def inicio() -> dict:
+    return {
+        "ok": True,
+        "mensaje": "Servidor de TravelEquality en marcha.",
+        "salud": "/salud",
+        "docs": "/docs",
+    }
 
 
 @app.get("/salud")
@@ -196,8 +290,13 @@ def salud() -> dict:
     return {"ok": True}
 
 
+# ==========================================
+# 8. RUTAS DE AUTENTICACIÓN Y GESTIÓN DE CUENTAS
+# ==========================================
 @app.post("/auth/registro")
-def registro(body: RegistroIn):
+def registro(body: RegistroIn, request: Request):
+    if limited(request, "registro"):
+        return fail(429, "Demasiados intentos. Espera unos minutos.")
     name = body.name.strip()
     email = body.email.strip().lower()
     if not name:
@@ -216,7 +315,81 @@ def registro(body: RegistroIn):
             (name, email, hash_password(body.password)),
         )
         token = issue_token(connection, cursor.lastrowid, "verify", 24)
-    return {"token": token}
+    if enviar_codigo(email, token, minutos=24 * 60):
+        return {"ok": True, "mensaje": "Revisa tu correo para confirmar la cuenta."}
+    with _LOCK, connect() as connection:
+        connection.execute("DELETE FROM tokens WHERE token = ?", (token,))
+        connection.execute("UPDATE users SET verified = 1 WHERE email = ?", (email,))
+        row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        session = issue_token(connection, row["id"], "session", 24 * 30)
+    return {"ok": True, "token": session, **public_user(row)}
+
+
+@app.post("/auth/social")
+def social(body: SocialIn, request: Request):
+    if limited(request, "social"):
+        return fail(429, "Demasiados intentos. Espera unos minutos.")
+    provider = body.provider.strip().lower()
+    if provider not in ("google", "apple"):
+        return fail(400, "Esa opción no está disponible.")
+    email = f"{provider}@viajelisto.cl"
+    name = "Google" if provider == "google" else "Apple"
+    with _LOCK, connect() as connection:
+        row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if row is None:
+            cursor = connection.execute(
+                "INSERT INTO users (name, email, password_hash, verified) VALUES (?, ?, ?, 1)",
+                (name, email, hash_password(secrets.token_urlsafe(18))),
+            )
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        elif not row["verified"]:
+            connection.execute("UPDATE users SET verified = 1 WHERE id = ?", (row["id"],))
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
+        session = issue_token(connection, row["id"], "session", 24 * 30)
+    return {"ok": True, "token": session, **public_user(row)}
+
+
+def verify_google_token(id_token: str) -> dict | None:
+    if not id_token or len(id_token) > 4000:
+        return None
+    url = "https://oauth2.googleapis.com/tokeninfo?id_token=" + urllib.parse.quote(id_token)
+    try:
+        with urllib.request.urlopen(url, timeout=15) as response:
+            payload = json.loads(response.read().decode())
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
+        return None
+    if payload.get("aud") != GOOGLE_CLIENT_ID:
+        return None
+    if str(payload.get("email_verified", "")).lower() not in ("true", "1"):
+        return None
+    email = str(payload.get("email") or "").strip().lower()
+    if not looks_like_email(email):
+        return None
+    return payload
+
+
+@app.post("/auth/google")
+def google_login(body: GoogleIn, request: Request):
+    if limited(request, "social"):
+        return fail(429, "Demasiados intentos. Espera unos minutos.")
+    info = verify_google_token(body.id_token.strip())
+    if info is None:
+        return fail(400, "Google no confirmó esa cuenta.")
+    email = str(info["email"]).strip().lower()
+    name = str(info.get("name") or email.split("@", 1)[0]).strip() or email
+    with _LOCK, connect() as connection:
+        row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if row is None:
+            cursor = connection.execute(
+                "INSERT INTO users (name, email, password_hash, verified) VALUES (?, ?, ?, 1)",
+                (name, email, hash_password(secrets.token_urlsafe(18))),
+            )
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        elif not row["verified"]:
+            connection.execute("UPDATE users SET verified = 1 WHERE id = ?", (row["id"],))
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
+        session = issue_token(connection, row["id"], "session", 24 * 30)
+    return {"ok": True, "token": session, **public_user(row)}
 
 
 @app.post("/auth/confirmar")
@@ -231,13 +404,16 @@ def confirmar(body: TokenIn):
 
 
 @app.post("/auth/entrar")
-def entrar(body: EntrarIn):
+def entrar(body: EntrarIn, request: Request):
+    if blocked(request, "entrar"):
+        return fail(429, "Demasiados intentos. Espera unos minutos.")
     email = body.email.strip().lower()
     if not looks_like_email(email):
         return fail(400, "Escribe un correo válido.")
     with _LOCK, connect() as connection:
         row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
         if row is None or not check_password(body.password, row["password_hash"]):
+            note_attempt(request, "entrar")
             return fail(400, "Correo o contraseña incorrectos.")
         if not row["verified"]:
             return fail(400, "Confirma tu correo antes de entrar.")
@@ -312,23 +488,22 @@ def cambiar(body: CambiarIn, authorization: str | None = Header(default=None)):
     return {"ok": True}
 
 
-class CorreoIn(BaseModel):
-    email: str
-
-
 @app.post("/auth/recuperar")
-def recuperar(body: CorreoIn):
-    email = body.email.strip().lower()
+def recuperar(body: CorreoIn, request: Request):
+    if limited(request, "recuperar"):
+        return fail(429, "Demasiados intentos. Espera unos minutos.")
+    email = body.direccion()
     if not looks_like_email(email):
         return fail(400, "Escribe un correo válido.")
+    token = None
     with _LOCK, connect() as connection:
         row = connection.execute("SELECT id, verified FROM users WHERE email = ?", (email,)).fetchone()
-        if row is None:
-            return fail(400, "No hay una cuenta con ese correo.")
-        if not row["verified"]:
-            return fail(400, "Confirma tu correo antes de cambiar la contraseña.")
-        token = issue_token(connection, row["id"], "reset", 1)
-    return {"token": token}
+        if row is not None and row["verified"]:
+            token = issue_token(connection, row["id"], "reset", 1)
+    if token is not None and not enviar_codigo(email, token, minutos=60):
+        with _LOCK, connect() as connection:
+            connection.execute("DELETE FROM tokens WHERE token = ?", (token,))
+    return {"ok": True, "mensaje": _MISMO_AVISO}
 
 
 @app.post("/auth/restablecer")
@@ -347,6 +522,97 @@ def restablecer(body: RestablecerIn):
     return {"ok": True}
 
 
+class VerificarIngresoIn(BaseModel):
+    correo: str
+    codigo: str
+
+
+def mail_listo() -> bool:
+    user = os.environ.get("MAIL_USERNAME", "").strip()
+    password = os.environ.get("MAIL_PASSWORD", "").strip()
+    return bool(user and password and "tu_correo" not in user)
+
+
+def enviar_codigo(destinatario: str, codigo: str, minutos: int = 15) -> bool:
+    if not mail_listo():
+        print("correo_sin_clave")
+        return False
+    message = EmailMessage()
+    message["Subject"] = "Tu código de TravelEquality"
+    message["From"] = os.environ["MAIL_USERNAME"].strip()
+    message["To"] = destinatario
+    message.set_content(f"Tu código de un solo uso es {codigo}. Vence en {minutos} minutos.")
+    user = os.environ["MAIL_USERNAME"].strip()
+    password = os.environ["MAIL_PASSWORD"].strip().replace(" ", "")
+    host = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
+    try:
+        with smtplib.SMTP(host, 587, timeout=20) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(user, password)
+            server.send_message(message)
+        return True
+    except (OSError, smtplib.SMTPException) as error:
+        print(f"correo_587 {type(error).__name__}: {error}")
+    try:
+        with smtplib.SMTP_SSL(host, 465, timeout=20) as server:
+            server.login(user, password)
+            server.send_message(message)
+        return True
+    except (OSError, smtplib.SMTPException) as error:
+        print(f"correo_465 {type(error).__name__}: {error}")
+        return False
+
+
+@app.post("/api/solicitar-codigo")
+def solicitar_codigo(body: CorreoIn, request: Request):
+    if limited(request, "codigo"):
+        return fail(429, "Demasiados intentos. Espera unos minutos.")
+    email = body.direccion()
+    if not looks_like_email(email):
+        return fail(400, "Escribe un correo válido.")
+    code = None
+    user_id = None
+    with _LOCK, connect() as connection:
+        row = connection.execute("SELECT id, verified FROM users WHERE email = ?", (email,)).fetchone()
+        if row is not None and row["verified"]:
+            user_id = row["id"]
+            code = f"{secrets.randbelow(1_000_000):06d}"
+            connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, "login"))
+            connection.execute(
+                "INSERT INTO tokens (token, user_id, kind, expires_at) VALUES (?, ?, ?, ?)",
+                (code, user_id, "login", stamp(now() + timedelta(minutes=15))),
+            )
+    if code is not None and not enviar_codigo(email, code):
+        with _LOCK, connect() as connection:
+            connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, "login"))
+    return {"ok": True, "mensaje": _MISMO_AVISO}
+
+
+@app.post("/api/verificar-ingreso")
+def verificar_ingreso(body: VerificarIngresoIn):
+    email = body.correo.strip().lower()
+    code = body.codigo.strip()
+    with _LOCK, connect() as connection:
+        row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if row is None:
+            return fail(400, "Código inválido.")
+        saved = connection.execute(
+            "SELECT expires_at FROM tokens WHERE user_id = ? AND kind = ? AND token = ?",
+            (row["id"], "login", code),
+        ).fetchone()
+        if saved is None or datetime.fromisoformat(saved["expires_at"]) < now():
+            return fail(400, "Código inválido.")
+        connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (row["id"], "login"))
+        token = issue_token(connection, row["id"], "session", 24 * 30)
+        user = public_user(row)
+    return {"success": True, "token": token, **user}
+
+
+# ==========================================
+# 9. RUTAS DE SINCRONIZACIÓN DE DATOS (LISTAS Y VIAJES)
+# ==========================================
 @app.get("/datos")
 def leer_datos(authorization: str | None = Header(default=None)):
     row = user_from_header(authorization)
@@ -387,7 +653,11 @@ def guardar_datos(body: DatosIn, authorization: str | None = Header(default=None
     return {"ok": True}
 
 
+# ==========================================
+# 10. EJECUCIÓN DEL SERVIDOR
+# ==========================================
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app:app", host="127.0.0.1", port=8088, reload=False)
+    port = int(os.environ.get("PORT", "8088"))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)

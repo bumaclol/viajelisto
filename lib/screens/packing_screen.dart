@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../models/packing_list.dart';
 import '../state/app_controller.dart';
+import '../widgets/save_status.dart';
 import '../theme/app_theme.dart';
-import '../widgets/list_visual.dart';
 import '../widgets/name_dialog.dart';
 
 class PackingScreen extends StatefulWidget {
@@ -29,70 +29,170 @@ class _PackingScreenState extends State<PackingScreen> {
     final controller = context.watch<AppController>();
     final lists = controller.lists;
     final selected = _current(lists);
+    final total = selected?.items.length ?? 0;
+    final packed = selected?.packedCount ?? 0;
+    final percent = total == 0 ? 0 : ((packed / total) * 100).round();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
       children: [
-        Row(
+        const Text(
+          'Mi equipaje',
+          style: TextStyle(
+            fontFamily: displayFamily,
+            fontSize: 34,
+            fontWeight: FontWeight.w700,
+            color: forestDeep,
+            height: 1.05,
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'PARTE CON UNA LISTA',
+          style: TextStyle(
+            color: moss,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.7,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
-            const Text(
-              'Listas de equipaje',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: ink),
-            ),
-            const Spacer(),
-            Text(
-              '${lists.length} LISTAS',
-              style: const TextStyle(
-                color: blue,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.4,
+            for (final list in lists)
+              _Chip(
+                label: list.name,
+                selected: selected?.id == list.id,
+                onTap: () => setState(() => _selectedId = list.id),
               ),
-            ),
           ],
         ),
-        const SizedBox(height: 14),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final width = (constraints.maxWidth - 12) / 2;
-            return Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final list in lists)
-                  SizedBox(
-                    width: width,
-                    child: _ListTile(
-                      list: list,
-                      selected: selected?.id == list.id,
-                      onTap: () => setState(() => _selectedId = list.id),
-                    ),
-                  ),
-                SizedBox(
-                  width: width,
-                  child: _NewListTile(onTap: _createList),
-                ),
-              ],
-            );
-          },
-        ),
         if (selected != null) ...[
-          const SizedBox(height: 16),
-          _DetailCard(
-            list: selected,
-            itemController: _itemController,
-            onAdd: () => _addItem(selected.id),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${_tripLabel(controller)} · Mi lista',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: forestDeep),
+                ),
+              ),
+              Text(
+                '$percent%',
+                style: const TextStyle(color: moss, fontWeight: FontWeight.w700),
+              ),
+              IconButton(
+                tooltip: 'Cambiar nombre',
+                visualDensity: VisualDensity.compact,
+                onPressed: () async {
+                  final name = await askForName(
+                    context,
+                    title: 'Cambiar nombre',
+                    initial: selected.name,
+                  );
+                  if (name == null || !context.mounted) return;
+                  await context.read<AppController>().renameList(selected.id, name);
+                },
+                icon: const Icon(Icons.edit_outlined, size: 18, color: moss),
+              ),
+            ],
+          ),
+          Text(
+            '$packed de $total empacados',
+            style: const TextStyle(color: moss),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              value: total == 0 ? 0 : packed / total,
+              minHeight: 6,
+              backgroundColor: line,
+              color: forest,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (selected.items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'Esta lista está vacía. Agrega el primer elemento.',
+                style: TextStyle(color: moss, height: 1.3),
+              ),
+            ),
+          for (final item in selected.items)
+            _ItemRow(
+              name: item.name,
+              packed: item.packed,
+              quantity: item.quantity,
+              onPacked: (value) {
+                context.read<AppController>().toggleItem(selected.id, item.id, value);
+              },
+              onQuantity: (value) {
+                context.read<AppController>().setItemQuantity(selected.id, item.id, value);
+              },
+              onRename: () async {
+                final name = await askForName(
+                  context,
+                  title: 'Editar elemento',
+                  initial: item.name,
+                );
+                if (name == null || !context.mounted) return;
+                await context.read<AppController>().renameItem(selected.id, item.id, name);
+              },
+              onDelete: () => _confirmDelete(selected.id, item.id, item.name),
+            ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _itemController,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              hintText: 'Agregar ítem',
+              filled: true,
+              fillColor: Colors.white,
+              prefixIcon: const Icon(Icons.add, color: forest),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: line),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: line),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: forest),
+              ),
+            ),
+            onSubmitted: (_) => _addItem(selected.id),
           ),
         ],
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: controller.restorePresets,
-            icon: const Icon(Icons.restore_rounded),
-            label: const Text('Restaurar playa, camping y bosque'),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: _createList,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Crear tu propia lista'),
+          style: TextButton.styleFrom(foregroundColor: forestDeep),
+        ),
+        Center(
+          child: TextButton(
+            onPressed: _confirmRestore,
+            child: const Text('Restaurar playa, camping y bosque'),
           ),
         ),
+        const SaveStatus(),
       ],
     );
+  }
+
+  String _tripLabel(AppController controller) {
+    final trip = controller.trips.first;
+    if (trip.destination.trim().isNotEmpty) return trip.destination.trim();
+    if (trip.name.trim().isNotEmpty) return trip.name.trim();
+    return 'Tu viaje';
   }
 
   PackingList? _current(List<PackingList> lists) {
@@ -101,6 +201,46 @@ class _PackingScreenState extends State<PackingScreen> {
       if (list.id == _selectedId) return list;
     }
     return lists.first;
+  }
+
+  Future<void> _confirmDelete(String listId, String itemId, String name) async {
+    final remove = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Eliminar elemento'),
+          content: Text('Se va a quitar $name de la lista.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Eliminar')),
+          ],
+        );
+      },
+    );
+    if (remove == true && mounted) {
+      await context.read<AppController>().deleteItem(listId, itemId);
+    }
+  }
+
+  Future<void> _confirmRestore() async {
+    final restore = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Restaurar plantillas'),
+          content: const Text(
+            'Playa, Camping y Bosque vuelven a su lista original y se desmarca lo empacado. Las listas con nombre propio se conservan.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Restaurar')),
+          ],
+        );
+      },
+    );
+    if (restore == true && mounted) {
+      await context.read<AppController>().restorePresets();
+    }
   }
 
   Future<void> _createList() async {
@@ -120,268 +260,108 @@ class _PackingScreenState extends State<PackingScreen> {
   }
 }
 
-class _ListTile extends StatelessWidget {
-  const _ListTile({
-    required this.list,
-    required this.selected,
-    required this.onTap,
-  });
+class _Chip extends StatelessWidget {
+  const _Chip({required this.label, required this.selected, required this.onTap});
 
-  final PackingList list;
+  final String label;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final visual = visualFor(list.iconKey);
-    final total = list.items.length;
-    final packed = list.packedCount;
     return Material(
-      color: visual.background,
-      borderRadius: BorderRadius.circular(22),
+      color: selected ? forest : Colors.white,
+      borderRadius: BorderRadius.circular(20),
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         onTap: onTap,
         child: Container(
-          height: 118,
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: selected ? blue : visual.border,
-              width: selected ? 2 : 1,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: selected ? forest : line),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : forestDeep,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.white,
-                child: Icon(visual.icon, color: visual.color, size: 20),
-              ),
-              const Spacer(),
-              Text(
-                list.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: ink),
-              ),
-              Text(
-                '$packed/$total listos',
-                style: const TextStyle(color: Color(0xFF667085), fontSize: 13),
-              ),
-            ],
-          ),
         ),
       ),
     );
   }
 }
 
-class _NewListTile extends StatelessWidget {
-  const _NewListTile({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFF8FAFC),
-      borderRadius: BorderRadius.circular(22),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(22),
-        onTap: onTap,
-        child: Container(
-          height: 118,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFD5DDEA), width: 1.4),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('Nueva lista...', style: TextStyle(color: Color(0xFF667085))),
-              const SizedBox(height: 8),
-              Container(
-                width: 36,
-                height: 36,
-                decoration: const BoxDecoration(color: blue, shape: BoxShape.circle),
-                child: const Icon(Icons.add, color: Colors.white),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DetailCard extends StatelessWidget {
-  const _DetailCard({
-    required this.list,
-    required this.itemController,
-    required this.onAdd,
+class _ItemRow extends StatelessWidget {
+  const _ItemRow({
+    required this.name,
+    required this.packed,
+    required this.quantity,
+    required this.onPacked,
+    required this.onQuantity,
+    required this.onRename,
+    required this.onDelete,
   });
 
-  final PackingList list;
-  final TextEditingController itemController;
-  final VoidCallback onAdd;
+  final String name;
+  final bool packed;
+  final int quantity;
+  final ValueChanged<bool> onPacked;
+  final ValueChanged<int> onQuantity;
+  final VoidCallback onRename;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final visual = visualFor(list.iconKey);
-    final total = list.items.length;
-    final packed = list.packedCount;
-    final percent = total == 0 ? 0 : ((packed / total) * 100).round();
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(color: Color(0x12305080), blurRadius: 24, offset: Offset(0, 10)),
-        ],
-      ),
-      child: Column(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(visual.icon, color: visual.color),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  list.name,
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                ),
+          Semantics(
+            button: true,
+            checked: packed,
+            label: packed ? '$name, empacado' : '$name, pendiente',
+            child: InkWell(
+            onTap: () => onPacked(!packed),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: packed ? forest : Colors.white,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: packed ? forest : const Color(0xFFC5CEC4), width: 1.4),
               ),
-              IconButton(
-                tooltip: 'Cambiar nombre',
-                onPressed: () async {
-                  final name = await askForName(
-                    context,
-                    title: 'Cambiar nombre',
-                    initial: list.name,
-                  );
-                  if (name == null || !context.mounted) return;
-                  await context.read<AppController>().renameList(list.id, name);
-                },
-                icon: const Icon(Icons.edit_outlined),
-              ),
-            ],
+              child: packed ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
+            ),
           ),
-          const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerLeft,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
             child: Text(
-              '$packed de $total elementos empacados ($percent%)',
-              style: const TextStyle(color: Color(0xFF667085)),
+              name,
+              style: TextStyle(
+                color: packed ? moss : forestDeep,
+                decoration: packed ? TextDecoration.lineThrough : null,
+                fontSize: 16,
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              value: total == 0 ? 0 : packed / total,
-              minHeight: 6,
-              backgroundColor: const Color(0xFFE8EDF5),
-              color: blue,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: itemController,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(hintText: 'Agregar elemento...'),
-                  onSubmitted: (_) => onAdd(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: onAdd,
-                style: FilledButton.styleFrom(
-                  backgroundColor: blue,
-                  minimumSize: const Size(96, 52),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                child: const Text('Agregar', style: TextStyle(fontWeight: FontWeight.w700)),
-              ),
+          QuantityStepper(quantity: quantity, onChanged: onQuantity),
+          PopupMenuButton<String>(
+            tooltip: 'Más',
+            icon: const Icon(Icons.more_horiz, color: moss, size: 18),
+            onSelected: (value) {
+              if (value == 'edit') onRename();
+              if (value == 'delete') onDelete();
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'edit', child: Text('Editar')),
+              PopupMenuItem(value: 'delete', child: Text('Eliminar')),
             ],
           ),
-          const SizedBox(height: 8),
-          for (final item in list.items)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: item.packed,
-                        activeColor: blue,
-                        onChanged: (value) {
-                          context.read<AppController>().toggleItem(list.id, item.id, value ?? false);
-                        },
-                      ),
-                      Expanded(
-                        child: Text(
-                          item.name,
-                          style: TextStyle(
-                            decoration: item.packed ? TextDecoration.lineThrough : null,
-                            color: item.packed ? const Color(0xFF98A2B3) : ink,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      const SizedBox(width: 12),
-                      QuantityStepper(
-                        quantity: item.quantity,
-                        onChanged: (value) {
-                          context.read<AppController>().setItemQuantity(list.id, item.id, value);
-                        },
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          minimumSize: const Size(0, 36),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        onPressed: () async {
-                          final name = await askForName(
-                            context,
-                            title: 'Editar elemento',
-                            initial: item.name,
-                          );
-                          if (name == null || !context.mounted) return;
-                          await context.read<AppController>().renameItem(list.id, item.id, name);
-                        },
-                        child: const Text('Editar'),
-                      ),
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          minimumSize: const Size(0, 36),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        onPressed: () => context.read<AppController>().deleteItem(list.id, item.id),
-                        child: const Text('Eliminar', style: TextStyle(color: Color(0xFF98A2B3))),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );
@@ -409,11 +389,11 @@ class QuantityStepper extends StatelessWidget {
           onPressed: quantity <= 1 ? null : () => onChanged(quantity - 1),
         ),
         SizedBox(
-          width: 22,
+          width: 18,
           child: Text(
             '$quantity',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.w800, color: ink),
+            style: const TextStyle(fontWeight: FontWeight.w700, color: forestDeep),
           ),
         ),
         _StepButton(
@@ -445,7 +425,7 @@ class _StepButton extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-      icon: Icon(icon, size: 18, color: onPressed == null ? const Color(0xFF98A2B3) : blue),
+      icon: Icon(icon, size: 16, color: onPressed == null ? const Color(0xFFC5CEC4) : forest),
     );
   }
 }

@@ -19,6 +19,7 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Planificador de equipaje y costos de viaje compartido">
+  <meta name="google-signin-client_id" content="798614168486-2f1rh7quro0s2ea52hd6gf9aptotsfp0.apps.googleusercontent.com">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -31,8 +32,25 @@
 
   <title>TravelEquality</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #173E35;
+    }
+  </style>
 </head>
 <body>
+  <script>
+    (function () {
+      var hash = window.location.hash || '';
+      var body = hash.charAt(0) === '#' ? hash.substring(1) : hash;
+      if (body.indexOf('id_token=') !== -1 || body.indexOf('error=') !== -1) {
+        sessionStorage.setItem('viajelisto_google_hash', body);
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    })();
+  </script>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

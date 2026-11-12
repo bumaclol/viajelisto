@@ -32,8 +32,8 @@ class CloudApi {
         request.headers['Authorization'] = 'Bearer $current';
       }
       if (body != null) request.body = jsonEncode(body);
-      final streamed = await request.send().timeout(const Duration(seconds: 8));
-      final response = await http.Response.fromStream(streamed);
+      final streamed = await request.send().timeout(const Duration(seconds: 50));
+      final response = await http.Response.fromStream(streamed).timeout(const Duration(seconds: 50));
       Map<String, dynamic> decoded = {};
       if (response.body.isNotEmpty) {
         final raw = jsonDecode(response.body);
@@ -44,7 +44,7 @@ class CloudApi {
       }
       return CloudReply(data: decoded);
     } catch (_) {
-      return const CloudReply(error: 'No hay conexión con el servidor.');
+      return const CloudReply(error: 'El servidor está despertando. Espera un momento e inténtalo de nuevo.');
     }
   }
 }

@@ -8,6 +8,20 @@ import '../models/trip_draft.dart';
 import 'app_database.dart';
 import 'cloud_api.dart';
 
+class RemoteSnapshot {
+  const RemoteSnapshot({
+    required this.synced,
+    this.lists = const <PackingList>[],
+    this.trips = const <TripDraft>[],
+    this.error,
+  });
+
+  final bool synced;
+  final List<PackingList> lists;
+  final List<TripDraft> trips;
+  final String? error;
+}
+
 class StorageService {
   StorageService({this.cloud});
 
@@ -15,6 +29,10 @@ class StorageService {
   String? pendingToken;
 
   bool get usesCloud => cloud != null;
+
+  Future<void> warmCloud() async {
+    await cloud?.get('/salud');
+  }
   static const listsKey = 'packing_lists_v1';
   static const listsVersionKey = 'packing_lists_version';
   static const tripsKey = 'trip_drafts_v1';
@@ -109,35 +127,42 @@ class StorageService {
       photo: data['photo'] as String?,
       phone: data['phone'] as String?,
     );
-    await pullCloud();
   }
 
-  Future<void> pushCloud(List<PackingList> lists, List<TripDraft> trips) async {
-    if (cloud == null || cloud!.token == null || cloud!.token!.isEmpty) return;
-    await cloud!.put('/datos', {
+  Future<String?> pushCloud(List<PackingList> lists, List<TripDraft> trips) async {
+    if (cloud == null || cloud!.token == null || cloud!.token!.isEmpty) return null;
+    final reply = await cloud!.put('/datos', {
       'listas': lists.map((list) => list.toJson()).toList(),
       'viajes': trips.map((trip) => trip.toJson()).toList(),
     });
+    return reply.error;
   }
 
-  Future<void> pullCloud() async {
-    if (cloud == null || cloud!.token == null || cloud!.token!.isEmpty) return;
+  Future<RemoteSnapshot> fetchRemote() async {
+    if (cloud == null || cloud!.token == null || cloud!.token!.isEmpty) {
+      return const RemoteSnapshot(synced: false);
+    }
     final remote = await cloud!.get('/datos');
-    if (remote.error != null || remote.data == null) return;
+    if (remote.error != null || remote.data == null) {
+      return RemoteSnapshot(
+        synced: false,
+        error: remote.error ?? 'No se pudo leer la cuenta.',
+      );
+    }
     if (remote.data!['sincronizado'] != true) {
-      await pushCloud(await loadLists(), await loadTrips());
-      return;
+      return const RemoteSnapshot(synced: false);
     }
     final rawLists = remote.data!['listas'] as List<dynamic>? ?? [];
     final rawTrips = remote.data!['viajes'] as List<dynamic>? ?? [];
-    final lists = rawLists
-        .map((entry) => PackingList.fromJson(Map<String, dynamic>.from(entry as Map)))
-        .toList();
-    final trips = rawTrips
-        .map((entry) => TripDraft.fromJson(Map<String, dynamic>.from(entry as Map)))
-        .toList();
-    if (lists.isNotEmpty) await _writeLists(lists);
-    await _writeTrips(trips.isEmpty ? [TripDraft()] : trips);
+    return RemoteSnapshot(
+      synced: true,
+      lists: rawLists
+          .map((entry) => PackingList.fromJson(Map<String, dynamic>.from(entry as Map)))
+          .toList(),
+      trips: rawTrips
+          .map((entry) => TripDraft.fromJson(Map<String, dynamic>.from(entry as Map)))
+          .toList(),
+    );
   }
 
   static const sessionTokenKey = 'session_token_v1';
@@ -234,7 +259,20 @@ class StorageService {
         'password': password,
       });
       if (reply.error != null) return reply.error;
-      pendingToken = reply.data?['token'] as String?;
+      final data = reply.data ?? {};
+      final token = data['token'] as String?;
+      if (token != null && token.isNotEmpty) {
+        cloud!.token = token;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(sessionTokenKey, token);
+        await _setSession(
+          cleanEmail,
+          data['name'] as String? ?? cleanName,
+          photo: data['photo'] as String?,
+          phone: data['phone'] as String?,
+        );
+      }
+      pendingToken = null;
       return null;
     }
 
@@ -254,6 +292,67 @@ class StorageService {
       'password': _hash(password),
     });
     await _setSession(cleanEmail, cleanName);
+    return null;
+  }
+
+  Future<String?> signInWithGoogle(String idToken) async {
+    if (cloud == null) return 'El inicio con Google está en el servidor.';
+    final reply = await cloud!.post('/auth/google', {'id_token': idToken});
+    if (reply.error != null) return reply.error;
+    final data = reply.data ?? {};
+    final token = data['token'] as String?;
+    if (token == null || token.isEmpty) return 'No se pudo entrar.';
+    cloud!.token = token;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(sessionTokenKey, token);
+    await _setSession(
+      data['email'] as String? ?? '',
+      data['name'] as String? ?? '',
+      photo: data['photo'] as String?,
+      phone: data['phone'] as String?,
+    );
+    return null;
+  }
+
+  Future<String?> signInWithProvider(String provider) async {
+    final key = provider.trim().toLowerCase();
+    if (key != 'google') return 'Esa opción no está disponible.';
+    final email = '$key@viajelisto.cl';
+    const name = 'Google';
+    if (cloud != null) {
+      final reply = await cloud!.post('/auth/social', {'provider': key});
+      if (reply.error != null) return reply.error;
+      final data = reply.data ?? {};
+      final token = data['token'] as String?;
+      if (token == null || token.isEmpty) return 'No se pudo entrar.';
+      cloud!.token = token;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(sessionTokenKey, token);
+      await _setSession(
+        data['email'] as String? ?? email,
+        data['name'] as String? ?? name,
+        photo: data['photo'] as String?,
+        phone: data['phone'] as String?,
+      );
+      return null;
+    }
+
+    final database = await AppDatabase.open();
+    final existing = await database.query(
+      'users',
+      columns: ['id'],
+      where: 'email = ?',
+      whereArgs: [email],
+      limit: 1,
+    );
+    if (existing.isEmpty) {
+      await database.insert('users', {
+        'name': name,
+        'email': email,
+        'password': _hash('viaje123'),
+      });
+    }
+    await _setSession(email, name);
     return null;
   }
 
@@ -281,7 +380,6 @@ class StorageService {
         photo: data['photo'] as String?,
         phone: data['phone'] as String?,
       );
-      await pullCloud();
       return null;
     }
 
@@ -485,7 +583,45 @@ class StorageService {
     if (cloud == null) return 'El servidor no está activo.';
     final reply = await cloud!.post('/auth/recuperar', {'email': cleanEmail});
     if (reply.error != null) return reply.error;
-    pendingToken = reply.data?['token'] as String?;
+    pendingToken = null;
+    return null;
+  }
+
+  Future<String?> requestLoginCode(String email) async {
+    final cleanEmail = email.trim().toLowerCase();
+    if (!_looksLikeEmail(cleanEmail)) return 'Escribe un correo válido.';
+    if (cloud == null) return 'El servidor no está activo.';
+    final reply = await cloud!.post('/api/solicitar-codigo', {'correo': cleanEmail});
+    if (reply.error != null) return reply.error;
+    pendingToken = null;
+    return null;
+  }
+
+  Future<String?> loginWithCode({
+    required String email,
+    required String code,
+  }) async {
+    final cleanEmail = email.trim().toLowerCase();
+    if (cloud == null) return 'El servidor no está activo.';
+    final reply = await cloud!.post('/api/verificar-ingreso', {
+      'correo': cleanEmail,
+      'codigo': code.trim(),
+    });
+    if (reply.error != null) return reply.error;
+    final data = reply.data ?? {};
+    if (data['success'] != true) return 'Código inválido.';
+    final token = data['token'] as String?;
+    if (token == null || token.isEmpty) return 'No se pudo entrar.';
+    cloud!.token = token;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(sessionTokenKey, token);
+    await _setSession(
+      cleanEmail,
+      data['name'] as String? ?? '',
+      photo: data['photo'] as String?,
+      phone: data['phone'] as String?,
+    );
+    pendingToken = null;
     return null;
   }
 

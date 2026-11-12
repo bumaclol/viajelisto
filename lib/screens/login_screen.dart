@@ -1,13 +1,13 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/google_config.dart';
+import '../services/google_redirect.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
-enum _AuthMode { login, create, recover }
+enum _AuthMode { login, create, recover, code }
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -21,12 +21,16 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
+  final _mailCode = TextEditingController();
   bool _obscure = true;
   bool _busy = false;
   String? _error;
   String? _success;
   String? _verifyToken;
   String? _recoveryToken;
+  bool _codeSent = false;
+  bool _awaitingVerify = false;
+  bool _recoverySent = false;
   _AuthMode _mode = _AuthMode.login;
   late final AnimationController _intro;
   late final AnimationController _flight;
@@ -36,8 +40,15 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     super.initState();
     _intro = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
       ..forward();
-    _flight = AnimationController(vsync: this, duration: const Duration(milliseconds: 4600))
-      ..repeat();
+    _flight = AnimationController(vsync: this, duration: const Duration(milliseconds: 4600));
+    final google = takeGoogleReply();
+    if (google.error != null) _error = google.error;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AppController>().warmCloud();
+      final token = google.idToken;
+      if (token != null) _enterWithGoogle(token);
+    });
   }
 
   @override
@@ -48,11 +59,13 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     _email.dispose();
     _password.dispose();
     _confirm.dispose();
+    _mailCode.dispose();
     super.dispose();
   }
 
   bool get _creating => _mode == _AuthMode.create;
   bool get _recovering => _mode == _AuthMode.recover;
+  bool get _byCode => _mode == _AuthMode.code;
 
   void _go(_AuthMode mode) {
     setState(() {
@@ -61,25 +74,70 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       _success = null;
       _verifyToken = null;
       _recoveryToken = null;
+      _codeSent = false;
+      _awaitingVerify = false;
+      _recoverySent = false;
+      _confirm.clear();
+      _mailCode.clear();
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final cloud = context.watch<AppController>().usesCloud;
-    final askCode = _recovering && cloud && _recoveryToken == null;
+    final askCode = _recovering && cloud && !_recoverySent;
+    final hidePassword = askCode || _byCode || _awaitingVerify;
     return Scaffold(
-      body: PageBackdrop(
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Column(
-                  children: [
-                    _FlightStrip(animation: _flight),
-                    const SizedBox(height: 8),
+      backgroundColor: paper,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                children: [
+                  if (_mode == _AuthMode.login) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+                      decoration: BoxDecoration(
+                        color: forest,
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '¿A DÓNDE VAMOS?',
+                            style: TextStyle(
+                              color: Color(0xFFD7E3D4),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                          SizedBox(height: 10),
+                          Text(
+                            'Hola de nuevo.',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 32,
+                              fontWeight: FontWeight.w700,
+                              height: 1.05,
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Tu equipaje, tus cuentas y tu próximo viaje. Todo donde lo dejaste.',
+                            style: TextStyle(color: Color(0xFFD5E2D2), height: 1.35),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                  ],
+                  if (_mode != _AuthMode.login) ...[
                     FadeTransition(
                       opacity: CurvedAnimation(
                         parent: _intro,
@@ -99,6 +157,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                       ),
                     ),
                     const SizedBox(height: 28),
+                  ],
                     FadeTransition(
                       opacity: CurvedAnimation(
                         parent: _intro,
@@ -132,11 +191,13 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            _recovering
-                                ? 'Recuperar contraseña'
-                                : _creating
-                                    ? 'Crea tu cuenta'
-                                    : 'Iniciar sesión',
+                            _byCode
+                                ? 'Entrar con código'
+                                : _recovering
+                                    ? 'Recuperar contraseña'
+                                    : _creating
+                                        ? 'Crea tu cuenta'
+                                        : 'Inicia sesión',
                             style: const TextStyle(
                               fontSize: 26,
                               fontWeight: FontWeight.w800,
@@ -145,20 +206,23 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            _recovering
+                            _byCode
+                                ? 'Pide un código de 6 dígitos. Si el correo no está configurado, el código aparece aquí.'
+                                : _recovering
                                 ? (cloud
                                     ? 'Pide un código de un solo uso. Cuando el correo esté conectado, ese código llegará al mail.'
                                     : 'Escribe el correo de tu cuenta y elige una contraseña nueva. Se guarda en este dispositivo.')
                                 : _creating
                                     ? (cloud
                                         ? 'La cuenta, las listas y el viaje se guardan en el servidor.'
-                                        : 'Guarda tus listas y el costo del viaje en este teléfono.')
-                                    : (cloud
-                                        ? 'Entra con la cuenta del servidor para ver tu equipaje y los gastos.'
-                                        : 'Entra para organizar el equipaje y repartir los gastos.'),
+                                        : 'Guarda tus listas y el costo del viaje en este navegador.')
+                                    : 'Para seguir preparando buenos recuerdos.',
                             style: const TextStyle(color: Color(0xFF667085), height: 1.35),
                           ),
                           const SizedBox(height: 22),
+                          if ((_mode == _AuthMode.login || _creating) && !_awaitingVerify) ...[
+                            const SizedBox(height: 4),
+                          ],
                           if (_creating) ...[
                             _Field(
                               controller: _name,
@@ -169,25 +233,21 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                           ],
                           _Field(
                             controller: _email,
-                            label: 'Correo',
+                            label: 'Correo electrónico',
                             icon: Icons.mail_outline_rounded,
                             keyboard: TextInputType.emailAddress,
                           ),
                           const SizedBox(height: 12),
-                          if (!askCode) ...[
+                          if (!hidePassword) ...[
                           _Field(
                             controller: _password,
                             label: _recovering ? 'Nueva contraseña' : 'Contraseña',
                             icon: Icons.lock_outline_rounded,
                             obscure: _obscure,
-                            suffix: IconButton(
+                            suffix: TextButton(
                               onPressed: () => setState(() => _obscure = !_obscure),
-                              icon: Icon(
-                                _obscure
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                              ),
-                              ),
+                              child: Text(_obscure ? 'Mostrar' : 'Ocultar'),
+                            ),
                             ),
                           ],
                           if (_creating || (_recovering && !askCode)) ...[
@@ -197,6 +257,14 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                               label: 'Confirmar contraseña',
                               icon: Icons.lock_outline_rounded,
                               obscure: _obscure,
+                            ),
+                          ],
+                          if (_codeSent || _awaitingVerify || _recoverySent) ...[
+                            const SizedBox(height: 12),
+                            _Field(
+                              controller: _codeSent ? _confirm : _mailCode,
+                              label: 'Código del correo',
+                              icon: Icons.pin_outlined,
                             ),
                           ],
                           if (_mode == _AuthMode.login)
@@ -212,13 +280,19 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                 child: const Text('¿Olvidaste tu contraseña?'),
                               ),
                             ),
-                          if (_verifyToken != null || _recoveryToken != null) ...[
-                            const SizedBox(height: 12),
-                            SelectableText(
-                              'Código: ${_verifyToken ?? _recoveryToken}',
-                              style: const TextStyle(color: ink, fontWeight: FontWeight.w700),
+                          if (_mode == _AuthMode.login)
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _busy ? null : () => _go(_AuthMode.code),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text('Entrar con código'),
+                              ),
                             ),
-                          ],
                           if (_success != null) ...[
                             const SizedBox(height: 12),
                             Text(
@@ -237,7 +311,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                           FilledButton(
                             onPressed: _busy ? null : _submit,
                             style: FilledButton.styleFrom(
-                              backgroundColor: blue,
+                              backgroundColor: forest,
                               minimumSize: const Size.fromHeight(52),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
@@ -246,11 +320,13 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                             child: Text(
                               _busy
                                   ? 'Espera...'
-                                  : _verifyToken != null
+                                  : _awaitingVerify
                                       ? 'Confirmar correo'
                                       : askCode
                                           ? 'Pedir enlace'
-                                          : _recovering
+                                          : _byCode
+                                      ? (_codeSent ? 'Verificar y entrar' : 'Enviar código')
+                                      : _recovering
                                               ? 'Guardar contraseña'
                                               : _creating
                                                   ? 'Crear cuenta'
@@ -258,6 +334,29 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                             ),
                           ),
+                          if ((_mode == _AuthMode.login || _creating) && !_awaitingVerify) ...[
+                            const SizedBox(height: 16),
+                            _SocialButton(
+                              label: 'Continuar con Google',
+                              background: Colors.white,
+                              foreground: forestDeep,
+                              border: line,
+                              icon: const _GoogleMark(),
+                              onPressed: _busy
+                                  ? null
+                                  : () {
+                                      try {
+                                        if (kIsWeb) {
+                                          openGoogleSignIn(googleClientId);
+                                        } else {
+                                          _social('Google');
+                                        }
+                                      } catch (_) {
+                                        setState(() => _error = 'Google no dejó entrar.');
+                                      }
+                                    },
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -271,41 +370,141 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                 _mode == _AuthMode.login ? _AuthMode.create : _AuthMode.login,
                               ),
                       child: Text(
-                        _recovering
+                        _byCode || _recovering
                             ? 'Volver a iniciar sesión'
                             : _creating
                                 ? 'Ya tengo cuenta. Iniciar sesión'
-                                : '¿No tienes cuenta? Crear cuenta',
+                                : '¿Primera vez por aquí? Crear una cuenta',
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
+                    if (_mode == _AuthMode.login && Navigator.of(context).canPop()) ...[
+                      const SizedBox(height: 12),
+                      const Text(
+                        'También puedes viajar sin cuenta',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.w800, color: forestDeep),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Tus listas y tu viaje se guardan aquí. Solo en este navegador, hasta que entres o crees una cuenta.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: moss, height: 1.35),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Seguir sin cuenta'),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
           ),
         ),
-      ),
     );
+  }
+
+  Future<void> _enterWithGoogle(String idToken) async {
+    final controller = context.read<AppController>();
+    setState(() {
+      _busy = true;
+      _error = null;
+      _success = null;
+    });
+    String? error;
+    try {
+      error = await controller.signInWithGoogle(idToken);
+    } catch (_) {
+      error = 'No se pudo entrar con Google.';
+    }
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = error;
+    });
+    _closeIfInside();
+  }
+
+  void _closeIfInside() {
+    if (!mounted) return;
+    if (!context.read<AppController>().signedIn) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
+  }
+
+  Future<void> _social(String provider) async {
+    final controller = context.read<AppController>();
+    setState(() {
+      _busy = true;
+      _error = null;
+      _success = null;
+    });
+    await controller.warmCloud();
+    final error = await controller.signInWithProvider(provider);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = error;
+    });
+    _closeIfInside();
   }
 
   Future<void> _submit() async {
     final controller = context.read<AppController>();
-    if (_verifyToken != null) {
+    if (_byCode && !_codeSent) {
       setState(() {
         _busy = true;
         _error = null;
         _success = null;
       });
-      final error = await controller.confirmEmail(_verifyToken!);
+      final error = await controller.requestLoginCode(_email.text);
       if (!mounted) return;
       setState(() {
         _busy = false;
         if (error == null) {
-          _verifyToken = null;
+          _codeSent = true;
+          _success = 'Código enviado a tu correo. Escríbelo aquí. No aparece en la pantalla.';
+        } else {
+          _error = error;
+        }
+      });
+      return;
+    }
+    if (_byCode && _codeSent) {
+      setState(() {
+        _busy = true;
+        _error = null;
+        _success = null;
+      });
+      final error = await controller.signInWithCode(
+        email: _email.text,
+        code: _confirm.text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = error;
+      });
+      _closeIfInside();
+      return;
+    }
+    if (_awaitingVerify) {
+      setState(() {
+        _busy = true;
+        _error = null;
+        _success = null;
+      });
+      final error = await controller.confirmEmail(_mailCode.text);
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        if (error == null) {
+          _awaitingVerify = false;
           _mode = _AuthMode.login;
           _password.clear();
           _confirm.clear();
+          _mailCode.clear();
           _success = 'Correo confirmado. Ya puedes entrar.';
         } else {
           _error = error;
@@ -313,7 +512,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       });
       return;
     }
-    if (_recovering && controller.usesCloud && _recoveryToken == null) {
+    if (_recovering && controller.usesCloud && !_recoverySent) {
       setState(() {
         _busy = true;
         _error = null;
@@ -324,8 +523,8 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       setState(() {
         _busy = false;
         if (error == null) {
-          _recoveryToken = controller.pendingToken;
-          _success = 'Código listo. Elige la contraseña nueva. Ese código es de un solo uso.';
+          _recoverySent = true;
+          _success = 'Si el correo está registrado, el código llegó al mail. Escríbelo aquí.';
         } else {
           _error = error;
         }
@@ -340,7 +539,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       });
       final error = controller.usesCloud
           ? await controller.completeRecovery(
-              token: _recoveryToken!,
+              token: _mailCode.text,
               password: _password.text,
               confirm: _confirm.text,
             )
@@ -387,12 +586,15 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     setState(() {
       _busy = false;
       _error = error;
-      if (error == null && _creating && controller.pendingToken != null) {
-        _verifyToken = controller.pendingToken;
-        _success =
-            'Cuenta creada en el servidor. Confirma el correo para poder entrar. En la nube ese código llegaría al mail.';
+      if (error == null && _creating && controller.usesCloud && !controller.signedIn) {
+        _awaitingVerify = true;
+        _password.clear();
+        _confirm.clear();
+        _mailCode.clear();
+        _success = 'Revisa tu correo y escribe el código que te llegó. No aparece en esta pantalla.';
       }
     });
+    _closeIfInside();
   }
 }
 
@@ -528,28 +730,99 @@ class _BrandMark extends StatelessWidget {
           width: 74,
           height: 74,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF5B8CFF), Color(0xFF2F6BFF)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            color: lime,
             borderRadius: BorderRadius.circular(24),
-            boxShadow: const [
-              BoxShadow(color: Color(0x332F6BFF), blurRadius: 18, offset: Offset(0, 8)),
-            ],
           ),
-          child: const Icon(Icons.flight_takeoff_rounded, color: Colors.white, size: 36),
+          child: const Icon(Icons.luggage_rounded, color: forestDeep, size: 34),
         ),
         const SizedBox(height: 14),
         const Text(
           'TravelEquality',
-          style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: ink),
+          style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: forestDeep),
         ),
         const SizedBox(height: 4),
         const Text(
           'Organiza tu próxima aventura',
           style: TextStyle(color: Color(0xFF667085), fontSize: 15),
         ),
+      ],
+    );
+  }
+}
+
+class _SocialButton extends StatelessWidget {
+  const _SocialButton({
+    required this.label,
+    required this.background,
+    required this.foreground,
+    required this.icon,
+    required this.onPressed,
+    this.border,
+  });
+
+  final String label;
+  final Color background;
+  final Color foreground;
+  final Widget icon;
+  final VoidCallback? onPressed;
+  final Color? border;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        backgroundColor: background,
+        foregroundColor: foreground,
+        minimumSize: const Size.fromHeight(52),
+        side: BorderSide(color: border ?? background),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            icon,
+            const SizedBox(width: 10),
+            Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoogleMark extends StatelessWidget {
+  const _GoogleMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Text(
+      'G',
+      style: TextStyle(
+        color: Color(0xFF4285F4),
+        fontSize: 20,
+        fontWeight: FontWeight.w800,
+        height: 1,
+      ),
+    );
+  }
+}
+
+class _OrDivider extends StatelessWidget {
+  const _OrDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      children: [
+        Expanded(child: Divider(color: Color(0xFFE4E7EC), height: 1)),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: Text('o', style: TextStyle(color: Color(0xFF98A2B3), fontWeight: FontWeight.w700)),
+        ),
+        Expanded(child: Divider(color: Color(0xFFE4E7EC), height: 1)),
       ],
     );
   }
@@ -591,129 +864,4 @@ class _Field extends StatelessWidget {
       ),
     );
   }
-
-class LoginScreen extends StatefulWidget {
-  @override
-  _LoginScreenState createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<StatefulWidget> {
-  final TextEditingController _correoController = TextEditingController();
-  final TextEditingController _codigoController = TextEditingController();
-  
-  bool _codigoEnviado = false; // Controla si se muestra el input del código
-  bool _isLoading = false;
-
-  // URL base de tu servidor Python (ajusta IP según tu entorno)
-  final String baseUrl = "http://10.0.2.2:5000/api";
-
-  // Paso 1: Solicitar código al servidor
-  Future<void> _solicitarCodigo() async {
-    setState(() => _isLoading = true);
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/solicitar-codigo'),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"correo": _correoController.text.trim()}),
-      );
-
-      if (response.statusCode == 200) {
-        setState(() {
-          _codigoEnviado = true; // Muestra el campo para digitar el código
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Código enviado a tu correo electrónico.")),
-        );
-      } else {
-        final data = jsonDecode(response.body);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? "Error al enviar código")),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error de conexión con el servidor")),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  // Paso 2: Verificar el código ingresado para entrar
-  Future<void> _verificarYEntrar() async {
-    setState(() => _isLoading = true);
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/verificar-ingreso'),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "correo": _correoController.text.trim(),
-          "codigo": _codigoController.text.trim(),
-        }),
-      );
-
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        // Acceso concedido: Navegar a la pantalla principal de ViajeListo
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("¡Ingreso exitoso!")),
-        );
-        // Navigator.pushReplacementNamed(context, '/home');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? "Código inválido")),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error al validar el código")),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text("Acceso / Recuperación - ViajeListo")),
-      body: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: _correoController,
-              decoration: InputDecoration(labelText: "Correo Electrónico"),
-              keyboardType: TextInputType.emailAddress,
-              enabled: !_codigoEnviado, // Bloquear correo una vez enviado el código
-            ),
-            SizedBox(height: 16),
-
-            // Mostrar campo de código sólo si ya fue solicitado
-            if (_codigoEnviado) ...[
-              TextField(
-                controller: _codigoController,
-                decoration: InputDecoration(
-                  labelText: "Código de verificación (6 dígitos)",
-                  counterText: "De un solo uso",
-                ),
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-              ),
-              SizedBox(height: 16),
-            ],
-
-            _isLoading
-                ? CircularProgressIndicator()
-                : ElevatedButton(
-                    onPressed: _codigoEnviado ? _verificarYEntrar : _solicitarCodigo,
-                    child: Text(_codigoEnviado ? "Verificar y Entrar" : "Enviar Código de Verificación"),
-                  ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 }

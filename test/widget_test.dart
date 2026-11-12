@@ -21,12 +21,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('TravelEquality'), findsOneWidget);
+    await tester.tap(find.text('Equipaje'));
+    await tester.pumpAndSettle();
     expect(find.text('Playa'), findsWidgets);
     expect(find.text('Camping'), findsOneWidget);
     expect(find.text('Bosque'), findsOneWidget);
   });
 
   testWidgets('abre la sección de perfil', (tester) async {
+    tester.view.physicalSize = const Size(900, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     SharedPreferences.setMockInitialValues({
       'session_email_v1': 'ana@correo.com',
       'session_name_v1': 'Ana',
@@ -34,13 +40,14 @@ void main() {
     await tester.pumpWidget(const ViajeListoApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Perfil'));
+    await tester.tap(find.text('Cuenta'));
     await tester.pumpAndSettle();
 
     expect(find.text('Ana'), findsWidgets);
     expect(find.text('ana@correo.com'), findsOneWidget);
     expect(find.text('Sin teléfono'), findsOneWidget);
     expect(find.text('Editar perfil'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Privacidad'), 300);
     expect(find.text('Privacidad'), findsOneWidget);
     expect(find.text('Idioma'), findsOneWidget);
     expect(find.text('Seguridad'), findsOneWidget);
@@ -72,8 +79,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 2000));
 
-    expect(find.text('Iniciar sesión'), findsWidgets);
     expect(find.text('TravelEquality'), findsOneWidget);
+    await tester.tap(find.text('Cuenta'));
+    await tester.pump();
+    await tester.tap(find.text('Iniciar sesión'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
     await tester.ensureVisible(find.text('¿Olvidaste tu contraseña?'));
     await tester.pump();
@@ -81,6 +92,37 @@ void main() {
     await tester.pump();
     expect(find.text('Recuperar contraseña'), findsOneWidget);
     expect(find.text('Guardar contraseña'), findsOneWidget);
+  });
+
+  testWidgets('el viaje genera el texto para compartir', (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({
+      'session_email_v1': 'ana@correo.com',
+      'session_name_v1': 'Ana',
+    });
+    await tester.pumpWidget(const ViajeListoApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Viaje'));
+    await tester.pumpAndSettle();
+
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.at(0), '100');
+    await tester.enterText(fields.at(1), '10');
+    await tester.enterText(fields.at(2), '1000');
+    await tester.enterText(fields.at(3), '2');
+    await tester.enterText(fields.at(4), '5000');
+    await tester.pump();
+
+    expect(find.text('Compartir resumen'), findsOneWidget);
+    await tester.tap(find.text('Compartir resumen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Resumen del viaje'), findsOneWidget);
+    expect(find.textContaining('Pasajero 1 (conductor)'), findsOneWidget);
+    expect(find.textContaining(r'$7.500'), findsWidgets);
   });
 
   test('guarda listas y el cálculo aunque se vuelva a abrir la app', () async {

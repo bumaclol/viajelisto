@@ -3,10 +3,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../data/default_lists.dart';
+import '../logic/account_merge.dart';
 import '../models/packing_item.dart';
 import '../models/packing_list.dart';
 import '../models/trip_draft.dart';
 import '../services/storage_service.dart';
+
+enum CloudSave { browser, saving, saved, failed }
 
 class AppController extends ChangeNotifier {
   AppController(this._storage);
@@ -21,15 +24,91 @@ class AppController extends ChangeNotifier {
   String? sessionPhone;
   bool notificationsEnabled = true;
   bool hideEmail = false;
+  CloudSave cloudSave = CloudSave.browser;
+  String? cloudSaveDetail;
+  RemoteSnapshot? pendingMerge;
 
   bool get signedIn => sessionEmail != null;
   bool get usesCloud => _storage.usesCloud;
+
+  Future<void> warmCloud() => _storage.warmCloud();
   String? pendingToken;
 
   Future<void> _persist() async {
     await _storage.saveLists(lists);
     await _storage.saveTrips(trips);
-    await _storage.pushCloud(lists, trips);
+    if (!signedIn || !usesCloud) {
+      cloudSave = CloudSave.browser;
+      cloudSaveDetail = null;
+      notifyListeners();
+      return;
+    }
+    cloudSave = CloudSave.saving;
+    cloudSaveDetail = null;
+    notifyListeners();
+    final error = await _storage.pushCloud(lists, trips);
+    cloudSave = error == null ? CloudSave.saved : CloudSave.failed;
+    cloudSaveDetail = error;
+    notifyListeners();
+  }
+
+  Future<void> _reconcile() async {
+    final remote = await _storage.fetchRemote();
+    if (remote.error != null) {
+      cloudSave = CloudSave.failed;
+      cloudSaveDetail = remote.error;
+      pendingMerge = null;
+      return;
+    }
+    if (!remote.synced) {
+      await _persist();
+      return;
+    }
+    final remoteTrips = remote.trips.isEmpty ? [TripDraft()] : remote.trips;
+    if (sameTripPayload(lists, trips, remote.lists, remoteTrips)) {
+      cloudSave = CloudSave.saved;
+      cloudSaveDetail = null;
+      pendingMerge = null;
+      return;
+    }
+    pendingMerge = RemoteSnapshot(synced: true, lists: remote.lists, trips: remoteTrips);
+    cloudSave = CloudSave.browser;
+    cloudSaveDetail = 'Hay datos distintos en tu cuenta.';
+  }
+
+  Future<void> keepBrowserData() async {
+    pendingMerge = null;
+    await _persist();
+  }
+
+  Future<void> useAccountData() async {
+    final remote = pendingMerge;
+    pendingMerge = null;
+    if (remote == null) return;
+    lists = remote.lists;
+    trips = remote.trips.isEmpty ? [TripDraft()] : remote.trips;
+    notifyListeners();
+    await _persist();
+  }
+
+  Future<void> combineAccount() async {
+    final remote = pendingMerge;
+    pendingMerge = null;
+    if (remote == null) return;
+    final remoteTrip = remote.trips.isEmpty ? TripDraft() : remote.trips.first;
+    lists = mergeLists(lists, remote.lists);
+    trips = [mergeTrip(trips.isEmpty ? TripDraft() : trips.first, remoteTrip)];
+    notifyListeners();
+    await _persist();
+  }
+
+  Future<void> _enterSession() async {
+    sessionEmail = await _storage.sessionEmail();
+    sessionName = await _storage.sessionName();
+    sessionPhoto = await _storage.sessionPhoto();
+    sessionPhone = await _storage.sessionPhone();
+    if (signedIn && usesCloud) await _reconcile();
+    notifyListeners();
   }
 
   Future<void> load() async {
@@ -37,12 +116,14 @@ class AppController extends ChangeNotifier {
       await _storage.open();
       lists = await _storage.loadLists();
       trips = await _storage.loadTrips();
+      if (trips.isEmpty) trips = [TripDraft()];
       sessionEmail = await _storage.sessionEmail();
       sessionName = await _storage.sessionName();
       sessionPhoto = await _storage.sessionPhoto();
       sessionPhone = await _storage.sessionPhone();
       notificationsEnabled = await _storage.notificationsEnabled();
       hideEmail = await _storage.hideEmail();
+      if (signedIn && usesCloud) await _reconcile();
     } finally {
       loading = false;
       notifyListeners();
@@ -153,13 +234,21 @@ class AppController extends ChangeNotifier {
   }) async {
     final error = await _storage.login(email: email, password: password);
     if (error != null) return error;
-    sessionEmail = await _storage.sessionEmail();
-    sessionName = await _storage.sessionName();
-    sessionPhoto = await _storage.sessionPhoto();
-    sessionPhone = await _storage.sessionPhone();
-    lists = await _storage.loadLists();
-    trips = await _storage.loadTrips();
-    notifyListeners();
+    await _enterSession();
+    return null;
+  }
+
+  Future<String?> signInWithGoogle(String idToken) async {
+    final error = await _storage.signInWithGoogle(idToken);
+    if (error != null) return error;
+    await _enterSession();
+    return null;
+  }
+
+  Future<String?> signInWithProvider(String provider) async {
+    final error = await _storage.signInWithProvider(provider);
+    if (error != null) return error;
+    await _enterSession();
     return null;
   }
 
@@ -171,11 +260,7 @@ class AppController extends ChangeNotifier {
     final error = await _storage.register(name: name, email: email, password: password);
     pendingToken = _storage.pendingToken;
     if (error != null) return error;
-    sessionEmail = await _storage.sessionEmail();
-    sessionName = await _storage.sessionName();
-    sessionPhoto = await _storage.sessionPhoto();
-    sessionPhone = await _storage.sessionPhone();
-    notifyListeners();
+    await _enterSession();
     return null;
   }
 
@@ -189,6 +274,22 @@ class AppController extends ChangeNotifier {
     final error = await _storage.requestRecovery(email);
     pendingToken = _storage.pendingToken;
     return error;
+  }
+
+  Future<String?> requestLoginCode(String email) async {
+    final error = await _storage.requestLoginCode(email);
+    pendingToken = _storage.pendingToken;
+    return error;
+  }
+
+  Future<String?> signInWithCode({
+    required String email,
+    required String code,
+  }) async {
+    final error = await _storage.loginWithCode(email: email, code: code);
+    if (error != null) return error;
+    await _enterSession();
+    return null;
   }
 
   Future<String?> completeRecovery({
@@ -264,6 +365,9 @@ class AppController extends ChangeNotifier {
     sessionName = null;
     sessionPhoto = null;
     sessionPhone = null;
+    pendingMerge = null;
+    cloudSave = CloudSave.browser;
+    cloudSaveDetail = null;
     notifyListeners();
   }
 

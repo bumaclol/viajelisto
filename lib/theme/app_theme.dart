@@ -7,16 +7,25 @@ const pageBottom = Color(0xFFF4F7FB);
 const good = Color(0xFF178A4A);
 const warn = Color(0xFFD14343);
 
+const forest = Color(0xFF173E35);
+const forestDeep = Color(0xFF102923);
+const lime = Color(0xFFD9EF88);
+const paper = Color(0xFFFBF8F3);
+const moss = Color(0xFF5E6A62);
+const line = Color(0xFFE4EAE3);
+
+const displayFamily = 'Inter';
+
 ThemeData buildAppTheme() {
   return ThemeData(
     useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(seedColor: blue).copyWith(
-      primary: blue,
+    colorScheme: ColorScheme.fromSeed(seedColor: forest).copyWith(
+      primary: forest,
       onPrimary: Colors.white,
       surface: Colors.white,
     ),
-    scaffoldBackgroundColor: pageBottom,
-    fontFamily: 'Segoe UI',
+    scaffoldBackgroundColor: paper,
+    fontFamily: 'Inter',
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: const Color(0xFFF3F5F8),
