@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/tr.dart';
+import '../services/phone_bridge.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
 import '../widgets/profile_avatar.dart';
@@ -159,9 +161,9 @@ class ProfileScreen extends StatelessWidget {
           ),
         if (controller.cloudSave == CloudSave.saved) const SizedBox(height: 18),
         ],
-        const Text(
-          'Dónde está guardado',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: forestDeep),
+        Text(
+          tr(context, 'Dónde está guardado'),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: forestDeep),
         ),
         const SizedBox(height: 8),
         _StorageRow(
@@ -189,18 +191,10 @@ class ProfileScreen extends StatelessWidget {
             subtitle: 'Todavía no está en la cuenta',
           ),
         const SizedBox(height: 22),
-        const Text(
-          'Por ahora, nos vemos en la web',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: forestDeep),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Usa TravelEquality desde tu navegador. La versión para instalar en el teléfono todavía no está disponible.',
-          style: TextStyle(color: moss, height: 1.35),
-        ),
+        const _PhoneCard(),
         const SizedBox(height: 28),
-        const Text(
-          'CONFIGURACIÓN',
+        Text(
+          tr(context, 'CONFIGURACIÓN'),
           style: TextStyle(
             color: Color(0xFF667085),
             fontSize: 13,
@@ -218,21 +212,21 @@ class ProfileScreen extends StatelessWidget {
             children: [
               _SettingTile(
                 icon: Icons.lock_outline_rounded,
-                title: 'Privacidad',
+                title: tr(context, 'Privacidad'),
                 subtitle: controller.hideEmail ? 'Correo oculto' : 'Correo visible',
                 onTap: () => _open(context, const PrivacySettingsScreen()),
               ),
               const Divider(height: 1, indent: 64),
               _SettingTile(
                 icon: Icons.language_rounded,
-                title: 'Idioma',
-                subtitle: 'Español',
+                title: tr(context, 'Idioma'),
+                subtitle: controller.languageCode == 'en' ? 'English' : 'Español',
                 onTap: () => _open(context, const LanguageSettingsScreen()),
               ),
               const Divider(height: 1, indent: 64),
               _SettingTile(
                 icon: Icons.shield_outlined,
-                title: 'Seguridad',
+                title: tr(context, 'Seguridad'),
                 subtitle: 'Contraseña',
                 onTap: () => _open(context, const SecuritySettingsScreen()),
               ),
@@ -240,8 +234,8 @@ class ProfileScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 28),
-        const Text(
-          'AYUDA Y NOTIFICACIONES',
+        Text(
+          tr(context, 'AYUDA Y NOTIFICACIONES'),
           style: TextStyle(
             color: Color(0xFF667085),
             fontSize: 13,
@@ -259,14 +253,14 @@ class ProfileScreen extends StatelessWidget {
             children: [
               _SettingTile(
                 icon: Icons.help_outline_rounded,
-                title: 'Ayuda',
+                title: tr(context, 'Ayuda'),
                 subtitle: 'Cómo usar la app',
                 onTap: () => _open(context, const HelpSettingsScreen()),
               ),
               const Divider(height: 1, indent: 64),
               _SettingTile(
                 icon: Icons.notifications_none_rounded,
-                title: 'Notificaciones',
+                title: tr(context, 'Notificaciones'),
                 subtitle: controller.notificationsEnabled ? 'Activadas' : 'Desactivadas',
                 onTap: () => _open(context, const NotificationsSettingsScreen()),
               ),
@@ -274,7 +268,7 @@ class ProfileScreen extends StatelessWidget {
                 const Divider(height: 1, indent: 64),
                 _SettingTile(
                   icon: Icons.logout_rounded,
-                  title: 'Cerrar sesión',
+                  title: tr(context, 'Cerrar sesión'),
                   subtitle: 'Salir de tu cuenta',
                   iconColor: warn,
                   titleColor: warn,
@@ -309,6 +303,85 @@ class ProfileScreen extends StatelessWidget {
     if (leave == true && context.mounted) {
       await context.read<AppController>().signOut();
     }
+  }
+}
+
+class _PhoneCard extends StatefulWidget {
+  const _PhoneCard();
+
+  @override
+  State<_PhoneCard> createState() => _PhoneCardState();
+}
+
+class _PhoneCardState extends State<_PhoneCard> {
+  String? _result;
+  var _busy = false;
+
+  Future<void> _install() async {
+    setState(() => _busy = true);
+    final result = await promptInstall();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _result = result;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final installed = appIsInstalled();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          tr(context, 'En tu teléfono'),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: forestDeep),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          installed
+              ? tr(context, 'TravelEquality ya está en tu pantalla de inicio.')
+              : tr(
+                  context,
+                  'Puedes dejar TravelEquality en la pantalla de inicio del teléfono. Se abre como una app, desde el ícono, y sigue siendo esta misma web. No está en Play Store ni en App Store.',
+                ),
+          style: const TextStyle(color: moss, height: 1.35),
+        ),
+        if (!installed) ...[
+          if (appCanPromptInstall()) ...[
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _busy ? null : _install,
+              style: FilledButton.styleFrom(
+                backgroundColor: forest,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(48),
+              ),
+              child: Text(tr(context, 'Instalar')),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            tr(context, 'En Android, abre el menú del navegador y elige Instalar app o Agregar a la pantalla de inicio.'),
+            style: const TextStyle(color: moss, height: 1.35),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            tr(context, 'En iPhone, toca Compartir y luego Agregar a inicio.'),
+            style: const TextStyle(color: moss, height: 1.35),
+          ),
+        ],
+        if (_result == 'accepted' || _result == 'dismissed') ...[
+          const SizedBox(height: 8),
+          Text(
+            _result == 'accepted'
+                ? tr(context, 'Listo. TravelEquality quedó en tu pantalla de inicio.')
+                : tr(context, 'Puedes instalarla cuando quieras desde el menú del navegador.'),
+            style: const TextStyle(color: forestDeep, fontWeight: FontWeight.w700, height: 1.35),
+          ),
+        ],
+      ],
+    );
   }
 }
 

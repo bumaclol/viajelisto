@@ -1,6 +1,6 @@
 {
-    "name": "viajelisto",
-    "short_name": "viajelisto",
+    "name": "TravelEquality",
+    "short_name": "TravelEquality",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#268565",

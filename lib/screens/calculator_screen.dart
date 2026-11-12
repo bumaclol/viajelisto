@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../data/fuel_prices.dart';
+import '../l10n/tr.dart';
 import '../logic/trip_calculator.dart';
 import '../models/fuel_station.dart';
 import '../models/packing_list.dart';
@@ -123,8 +124,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           ),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'Las cuentas, claras.',
+        Text(
+          tr(context, 'Las cuentas, claras.'),
           style: TextStyle(
             fontFamily: displayFamily,
             fontSize: 32,
@@ -135,8 +136,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         ),
         const SizedBox(height: 14),
         TripCover(
-          kicker: 'Nuestro próximo viaje',
-          title: 'Cada uno paga lo justo.',
+          kicker: tr(context, 'Nuestro próximo viaje'),
+          title: tr(context, 'Cada uno paga lo justo.'),
           onEdit: () => editTrip(context, trip),
         ),
         const SizedBox(height: 16),

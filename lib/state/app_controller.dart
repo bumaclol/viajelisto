@@ -4,10 +4,14 @@ import 'package:flutter/foundation.dart';
 
 import '../data/default_lists.dart';
 import '../logic/account_merge.dart';
+import '../logic/trip_calculator.dart';
 import '../models/packing_item.dart';
 import '../models/packing_list.dart';
 import '../models/trip_draft.dart';
+import '../services/google_redirect.dart';
+import '../services/phone_bridge.dart';
 import '../services/storage_service.dart';
+import '../utils/format.dart';
 
 enum CloudSave { browser, saving, saved, failed }
 
@@ -23,7 +27,9 @@ class AppController extends ChangeNotifier {
   String? sessionPhoto;
   String? sessionPhone;
   bool notificationsEnabled = true;
+  String languageCode = 'es';
   bool hideEmail = false;
+  final Set<String> _alerts = {};
   CloudSave cloudSave = CloudSave.browser;
   String? cloudSaveDetail;
   RemoteSnapshot? pendingMerge;
@@ -122,6 +128,7 @@ class AppController extends ChangeNotifier {
       sessionPhoto = await _storage.sessionPhoto();
       sessionPhone = await _storage.sessionPhone();
       notificationsEnabled = await _storage.notificationsEnabled();
+      languageCode = await _storage.languageCode();
       hideEmail = await _storage.hideEmail();
       if (signedIn && usesCloud) await _reconcile();
     } finally {
@@ -205,6 +212,8 @@ class AppController extends ChangeNotifier {
     item.packed = packed;
     notifyListeners();
     await _persist();
+    final list = listById(listId);
+    if (list != null) _watchList(list);
   }
 
   Future<void> deleteItem(String listId, String itemId) async {
@@ -226,6 +235,7 @@ class AppController extends ChangeNotifier {
     trips = next.isEmpty ? [TripDraft()] : next;
     notifyListeners();
     await _persist();
+    _watchBudget();
   }
 
   Future<String?> signIn({
@@ -329,10 +339,26 @@ class AppController extends ChangeNotifier {
     return _storage.resetPassword(email: email, password: password, confirm: confirm);
   }
 
-  Future<void> setNotificationsEnabled(bool value) async {
+  Future<String?> setNotificationsEnabled(bool value) async {
+    if (value) {
+      final allowed = await requestAlerts();
+      if (!allowed) {
+        notificationsEnabled = false;
+        notifyListeners();
+        await _storage.setNotificationsEnabled(false);
+        return 'El navegador bloqueó los avisos. Actívalos en los permisos del sitio.';
+      }
+    }
     notificationsEnabled = value;
     notifyListeners();
     await _storage.setNotificationsEnabled(value);
+    return null;
+  }
+
+  Future<void> setLanguage(String code) async {
+    languageCode = code == 'en' ? 'en' : 'es';
+    notifyListeners();
+    await _storage.setLanguageCode(languageCode);
   }
 
   Future<void> setHideEmail(bool value) async {
@@ -360,6 +386,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    forgetGoogleSession();
     await _storage.logout();
     sessionEmail = null;
     sessionName = null;
@@ -381,4 +408,46 @@ class AppController extends ChangeNotifier {
   }
 
   String _id() => DateTime.now().microsecondsSinceEpoch.toString();
+
+  void _ping(String key, String title, String body) {
+    if (!notificationsEnabled || _alerts.contains(key)) return;
+    _alerts.add(key);
+    showAlert(title, body);
+  }
+
+  void _watchList(PackingList list) {
+    final key = 'packed-${list.id}';
+    final complete = list.items.isNotEmpty && list.packedCount == list.items.length;
+    if (!complete) {
+      _alerts.remove(key);
+      return;
+    }
+    _ping(key, 'Equipaje listo', '${list.name} está completo.');
+  }
+
+  void _watchBudget() {
+    const key = 'budget';
+    if (trips.isEmpty) {
+      _alerts.remove(key);
+      return;
+    }
+    final trip = trips.first;
+    final preview = previewTrip(
+      distance: trip.distance,
+      consumption: trip.consumption,
+      fuelPrice: trip.fuelPrice,
+      tolls: trip.tolls,
+      budget: trip.budget,
+      passengers: trip.passengers < 1 ? 1 : trip.passengers,
+      liters: trip.liters,
+      otherExpenses: trip.otherExpenses,
+      extraAmounts: [for (final extra in trip.extras) extra.amount],
+    );
+    if (preview is! CostReady || preview.result.withinBudget != false) {
+      _alerts.remove(key);
+      return;
+    }
+    final missing = preview.result.budgetDifference?.abs() ?? 0;
+    _ping(key, 'Presupuesto superado', 'Te pasas ${formatMoney(missing)} por persona.');
+  }
 }

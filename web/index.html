@@ -50,6 +50,42 @@
         history.replaceState(null, '', window.location.pathname + window.location.search);
       }
     })();
+    window.viajelistoInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', function (event) {
+      event.preventDefault();
+      window.viajelistoInstallPrompt = event;
+    });
+    window.viajelistoInstalled = function () {
+      return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    };
+    window.viajelistoCanInstall = function () {
+      return !!window.viajelistoInstallPrompt;
+    };
+    window.viajelistoInstall = async function () {
+      var promptEvent = window.viajelistoInstallPrompt;
+      if (!promptEvent) return 'manual';
+      promptEvent.prompt();
+      var choice = await promptEvent.userChoice;
+      window.viajelistoInstallPrompt = null;
+      return choice && choice.outcome ? choice.outcome : 'dismissed';
+    };
+    window.viajelistoAskNotify = async function () {
+      if (!('Notification' in window)) return 'unsupported';
+      try {
+        return await Notification.requestPermission();
+      } catch (error) {
+        return 'denied';
+      }
+    };
+    window.viajelistoNotify = function (title, body) {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+      try {
+        new Notification(title, { body: body, icon: 'icons/Icon-192.png' });
+        return true;
+      } catch (error) {
+        return false;
+      }
+    };
   </script>
   <!--
     You can customize the "flutter_bootstrap.js" script.

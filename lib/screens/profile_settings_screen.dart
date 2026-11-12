@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/tr.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
 
@@ -34,7 +35,7 @@ class HelpSettingsScreen extends StatelessWidget {
           _HelpCard(
             icon: Icons.notifications_none_rounded,
             title: 'Notificaciones',
-            body: 'Puedes activar o desactivar los avisos de esta app en Notificaciones.',
+            body: 'Cuando están activas, el navegador avisa si una lista queda completa o si el viaje se pasa del presupuesto.',
           ),
         ],
       ),
@@ -42,19 +43,44 @@ class HelpSettingsScreen extends StatelessWidget {
   }
 }
 
-class NotificationsSettingsScreen extends StatelessWidget {
+class NotificationsSettingsScreen extends StatefulWidget {
   const NotificationsSettingsScreen({super.key});
+
+  @override
+  State<NotificationsSettingsScreen> createState() => _NotificationsSettingsScreenState();
+}
+
+class _NotificationsSettingsScreenState extends State<NotificationsSettingsScreen> {
+  String? _note;
+
+  Future<void> _toggle(bool value) async {
+    final message = await context.read<AppController>().setNotificationsEnabled(value);
+    if (!mounted) return;
+    setState(() => _note = message);
+  }
 
   @override
   Widget build(BuildContext context) {
     final enabled = context.watch<AppController>().notificationsEnabled;
     return _SettingsPage(
-      title: 'Notificaciones',
-      child: _SwitchCard(
-        title: 'Avisos de la app',
-        subtitle: 'Recibe avisos sobre tus listas y el gasto del viaje en este dispositivo.',
-        value: enabled,
-        onChanged: (value) => context.read<AppController>().setNotificationsEnabled(value),
+      title: tr(context, 'Notificaciones'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SwitchCard(
+            title: tr(context, 'Avisos de la app'),
+            subtitle: tr(
+              context,
+              'Avisa cuando una lista queda completa y cuando el viaje se pasa del presupuesto.',
+            ),
+            value: enabled,
+            onChanged: (value) => _toggle(value),
+          ),
+          if (_note != null) ...[
+            const SizedBox(height: 10),
+            Text(tr(context, _note!), style: const TextStyle(color: Color(0xFF8A4B2F), height: 1.35)),
+          ],
+        ],
       ),
     );
   }
@@ -93,11 +119,25 @@ class LanguageSettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _SettingsPage(
-      title: 'Idioma',
-      child: _ChoiceCard(
-        title: 'Español',
-        subtitle: 'La aplicación está en español.',
+    final code = context.watch<AppController>().languageCode;
+    return _SettingsPage(
+      title: tr(context, 'Idioma'),
+      child: Column(
+        children: [
+          _ChoiceCard(
+            title: 'Español',
+            subtitle: tr(context, 'La aplicación está en español.'),
+            selected: code != 'en',
+            onTap: () => context.read<AppController>().setLanguage('es'),
+          ),
+          const SizedBox(height: 10),
+          _ChoiceCard(
+            title: 'English',
+            subtitle: 'The app is in English.',
+            selected: code == 'en',
+            onTap: () => context.read<AppController>().setLanguage('en'),
+          ),
+        ],
       ),
     );
   }
@@ -297,22 +337,34 @@ class _SwitchCard extends StatelessWidget {
 }
 
 class _ChoiceCard extends StatelessWidget {
-  const _ChoiceCard({required this.title, required this.subtitle});
+  const _ChoiceCard({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
 
   final String title;
   final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
         borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
         children: [
-          const Icon(Icons.check_circle_rounded, color: blue),
+          Icon(
+            selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+            color: selected ? blue : moss,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -324,7 +376,9 @@ class _ChoiceCard extends StatelessWidget {
               ],
             ),
           ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }

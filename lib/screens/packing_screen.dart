@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/tr.dart';
 import '../models/packing_list.dart';
 import '../screens/home_screen.dart';
 import '../state/app_controller.dart';
@@ -38,17 +39,17 @@ class _PackingScreenState extends State<PackingScreen> {
     final trip = controller.trips.first;
     final headline = trip.destination.trim().isNotEmpty
         ? trip.destination.trim()
-        : 'Todo listo para salir.';
+        : tr(context, 'Todo listo para salir.');
     final coverTitle = trip.origin.trim().isNotEmpty && trip.destination.trim().isNotEmpty
         ? 'De ${trip.origin.trim()} a ${trip.destination.trim()}.'
-        : 'Menos olvidos. Más aventuras.';
+        : tr(context, 'Menos olvidos. Más aventuras.');
     final listCount = lists.length;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
       children: [
-        const Text(
-          'MI VIAJE EN EQUIPO',
+        Text(
+          tr(context, 'MI VIAJE EN EQUIPO'),
           style: TextStyle(
             color: forest,
             fontSize: 11,
@@ -69,7 +70,7 @@ class _PackingScreenState extends State<PackingScreen> {
         ),
         const SizedBox(height: 14),
         TripCover(
-          kicker: 'Nuestro próximo viaje',
+          kicker: tr(context, 'Nuestro próximo viaje'),
           title: coverTitle,
           imageAsset: 'assets/bosque-araucarias.jpg',
           imageLabel: 'Araucarias en el Parque Nacional Conguillío',

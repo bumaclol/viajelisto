@@ -7,4 +7,6 @@ class GoogleReply {
 
 GoogleReply takeGoogleReply() => const GoogleReply();
 
+void forgetGoogleSession() {}
+
 void openGoogleSignIn(String clientId) {}

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'screens/home_shell.dart';
 import 'screens/splash_screen.dart';
 import 'services/cloud_api.dart';
+import 'services/google_redirect.dart';
 import 'services/storage_service.dart';
 import 'state/app_controller.dart';
 import 'theme/app_theme.dart';
@@ -41,6 +42,7 @@ class _BootScreen extends StatefulWidget {
 
 class _BootScreenState extends State<_BootScreen> {
   var _hold = true;
+  var _googleRead = false;
 
   @override
   void initState() {
@@ -50,9 +52,21 @@ class _BootScreenState extends State<_BootScreen> {
     });
   }
 
+  void _takeGoogle() {
+    if (_googleRead) return;
+    _googleRead = true;
+    final token = takeGoogleReply().idToken;
+    if (token == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await context.read<AppController>().signInWithGoogle(token);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<AppController>();
+    if (!controller.loading) _takeGoogle();
     if (controller.loading || _hold) return const SplashScreen();
     return const HomeShell();
   }

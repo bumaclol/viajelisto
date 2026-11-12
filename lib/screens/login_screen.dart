@@ -485,7 +485,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         _busy = false;
         if (error == null) {
           _recoverySent = true;
-          _success = 'Si el correo está registrado, el código llegó al mail. Escríbelo aquí.';
+          _success = 'Si el correo está registrado, revisa la bandeja. El código no se muestra aquí.';
         } else {
           _error = error;
         }

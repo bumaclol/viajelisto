@@ -271,9 +271,22 @@ class DatosIn(BaseModel):
 # ==========================================
 # 7. EVENTO DE INICIO Y RUTA DE SALUD
 # ==========================================
+def asegurar_cuenta_presentacion() -> None:
+    email = "jose@viajelisto.cl"
+    with _LOCK, connect() as connection:
+        row = connection.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if row is not None:
+            return
+        connection.execute(
+            "INSERT INTO users (name, email, password_hash, verified) VALUES (?, ?, ?, 1)",
+            ("Jose Tomas", email, hash_password("viaje123")),
+        )
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    asegurar_cuenta_presentacion()
 
 
 def archivo_web(ruta: str) -> Path | None:
@@ -358,7 +371,12 @@ def registro(body: RegistroIn, request: Request):
         connection.execute("UPDATE users SET verified = 1 WHERE email = ?", (email,))
         row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
         session = issue_token(connection, row["id"], "session", 24 * 30)
-    return {"ok": True, "token": session, **public_user(row)}
+    return {
+        "ok": True,
+        "token": session,
+        "mensaje": "La cuenta quedó creada. No se pudo enviar el correo de confirmación.",
+        **public_user(row),
+    }
 
 
 @app.post("/auth/social")
@@ -531,6 +549,8 @@ def recuperar(body: CorreoIn, request: Request):
     email = body.direccion()
     if not looks_like_email(email):
         return fail(400, "Escribe un correo válido.")
+    if not correo_disponible():
+        return fail(503, "El servidor no tiene un correo conectado, así que no puede enviar el código.")
     token = None
     with _LOCK, connect() as connection:
         row = connection.execute("SELECT id, verified FROM users WHERE email = ?", (email,)).fetchone()
@@ -539,6 +559,7 @@ def recuperar(body: CorreoIn, request: Request):
     if token is not None and not enviar_codigo(email, token, minutos=60):
         with _LOCK, connect() as connection:
             connection.execute("DELETE FROM tokens WHERE token = ?", (token,))
+        return fail(503, "No se pudo enviar el correo. Inténtalo más tarde.")
     return {"ok": True, "mensaje": _MISMO_AVISO}
 
 
@@ -563,13 +584,73 @@ class VerificarIngresoIn(BaseModel):
     codigo: str
 
 
+def _clave(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value or "tu_clave" in value or "tu_correo" in value:
+        return ""
+    return value
+
+
 def mail_listo() -> bool:
     user = os.environ.get("MAIL_USERNAME", "").strip()
     password = os.environ.get("MAIL_PASSWORD", "").strip()
     return bool(user and password and "tu_correo" not in user)
 
 
+def correo_https() -> bool:
+    return bool(_clave("BREVO_API_KEY") or _clave("RESEND_API_KEY"))
+
+
+def correo_disponible() -> bool:
+    return mail_listo() or correo_https()
+
+
+def _post_json(url: str, payload: dict, headers: dict) -> bool:
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "User-Agent": "TravelEquality", **headers},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return 200 <= response.status < 300
+    except Exception as error:
+        print(f"correo_https {type(error).__name__}")
+        return False
+
+
+def _enviar_https(destinatario: str, texto: str) -> bool | None:
+    asunto = "Tu código de TravelEquality"
+    brevo = _clave("BREVO_API_KEY")
+    if brevo:
+        remitente = os.environ.get("MAIL_FROM", "").strip() or "noreply@viajelisto.cl"
+        return _post_json(
+            "https://api.brevo.com/v3/smtp/email",
+            {
+                "sender": {"name": "TravelEquality", "email": remitente},
+                "to": [{"email": destinatario}],
+                "subject": asunto,
+                "textContent": texto,
+            },
+            {"api-key": brevo},
+        )
+    resend = _clave("RESEND_API_KEY")
+    if resend:
+        remitente = os.environ.get("MAIL_FROM", "").strip() or "TravelEquality <onboarding@resend.dev>"
+        return _post_json(
+            "https://api.resend.com/emails",
+            {"from": remitente, "to": [destinatario], "subject": asunto, "text": texto},
+            {"Authorization": f"Bearer {resend}"},
+        )
+    return None
+
+
 def enviar_codigo(destinatario: str, codigo: str, minutos: int = 15) -> bool:
+    texto = f"Tu código de un solo uso es {codigo}. Vence en {minutos} minutos."
+    https = _enviar_https(destinatario, texto)
+    if https is not None:
+        return https
     if not mail_listo():
         print("correo_sin_clave")
         return False
@@ -577,7 +658,7 @@ def enviar_codigo(destinatario: str, codigo: str, minutos: int = 15) -> bool:
     message["Subject"] = "Tu código de TravelEquality"
     message["From"] = os.environ["MAIL_USERNAME"].strip()
     message["To"] = destinatario
-    message.set_content(f"Tu código de un solo uso es {codigo}. Vence en {minutos} minutos.")
+    message.set_content(texto)
     user = os.environ["MAIL_USERNAME"].strip()
     password = os.environ["MAIL_PASSWORD"].strip().replace(" ", "")
     host = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
@@ -608,6 +689,8 @@ def solicitar_codigo(body: CorreoIn, request: Request):
     email = body.direccion()
     if not looks_like_email(email):
         return fail(400, "Escribe un correo válido.")
+    if not correo_disponible():
+        return fail(503, "El servidor no tiene un correo conectado, así que no puede enviar el código.")
     code = None
     user_id = None
     with _LOCK, connect() as connection:
@@ -623,6 +706,7 @@ def solicitar_codigo(body: CorreoIn, request: Request):
     if code is not None and not enviar_codigo(email, code):
         with _LOCK, connect() as connection:
             connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, "login"))
+        return fail(503, "No se pudo enviar el correo. Inténtalo más tarde.")
     return {"ok": True, "mensaje": _MISMO_AVISO}
 
 

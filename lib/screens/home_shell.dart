@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/tr.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
 import '../widgets/save_status.dart';
@@ -242,7 +243,7 @@ class _NavItem extends StatelessWidget {
                   Icon(icon, color: color, size: 22),
                   const SizedBox(height: 2),
                   Text(
-                    label,
+                    tr(context, label),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

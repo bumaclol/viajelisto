@@ -5,6 +5,7 @@ import '../logic/trip_calculator.dart';
 import '../models/packing_item.dart';
 import '../models/packing_list.dart';
 import '../models/trip_draft.dart';
+import '../l10n/tr.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -41,7 +42,7 @@ class HomeScreen extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
       children: [
         Text(
-          'Hola, $name',
+          '${tr(context, 'Hola')}, $name',
           style: const TextStyle(
             fontFamily: displayFamily,
             fontSize: 34,
@@ -58,14 +59,14 @@ class HomeScreen extends StatelessWidget {
           onContinue: onPrepare,
         ),
         const SizedBox(height: 22),
-        const Text(
-          'Todo listo para salir',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: forestDeep),
+        Text(
+          tr(context, 'Todo listo para salir'),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: forestDeep),
         ),
         const SizedBox(height: 2),
-        const Text(
-          'Un plan compartido. Cero errores.',
-          style: TextStyle(color: moss, height: 1.3),
+        Text(
+          tr(context, 'Un plan compartido. Cero errores.'),
+          style: const TextStyle(color: moss, height: 1.3),
         ),
         const SizedBox(height: 12),
         Row(
@@ -77,7 +78,7 @@ class HomeScreen extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'Que no se te quede nada',
+          tr(context, 'Que no se te quede nada'),
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: forestDeep.withValues(alpha: 0.92)),
         ),
         const SizedBox(height: 4),
@@ -94,11 +95,11 @@ class HomeScreen extends StatelessWidget {
             minimumSize: const Size.fromHeight(52),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           ),
-          child: const FittedBox(
+          child: FittedBox(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('Seguir preparando el viaje', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                Text(tr(context, 'Seguir preparando el viaje'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                 SizedBox(width: 8),
                 Icon(Icons.arrow_forward_rounded, size: 18),
               ],
@@ -111,7 +112,7 @@ class HomeScreen extends StatelessWidget {
           child: TextButton.icon(
             onPressed: onExpenses,
             icon: const Icon(Icons.payments_outlined, size: 18),
-            label: const Text('Ver gastos del viaje'),
+            label: Text(tr(context, 'Ver gastos del viaje')),
             style: TextButton.styleFrom(foregroundColor: forestDeep),
           ),
         ),
@@ -264,7 +265,11 @@ class _TripCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: Text(trip.name.trim().isEmpty && trip.destination.trim().isEmpty ? 'Crear viaje' : 'Editar viaje'),
+                child: Text(
+                  trip.name.trim().isEmpty && trip.destination.trim().isEmpty
+                      ? tr(context, 'Crear viaje')
+                      : tr(context, 'Editar viaje'),
+                ),
               ),
               const Spacer(),
               Material(

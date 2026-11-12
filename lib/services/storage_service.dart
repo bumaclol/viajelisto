@@ -171,6 +171,7 @@ class StorageService {
   static const sessionPhotoKey = 'session_photo_v1';
   static const sessionPhoneKey = 'session_phone_v1';
   static const notificationsKey = 'settings_notifications_v1';
+  static const languageKey = 'settings_language_v1';
   static const hideEmailKey = 'settings_hide_email_v1';
 
   Future<String?> sessionEmail() async {
@@ -230,6 +231,17 @@ class StorageService {
   Future<void> setNotificationsEnabled(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(notificationsKey, value);
+  }
+
+  Future<String> languageCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final code = prefs.getString(languageKey);
+    return code == 'en' ? 'en' : 'es';
+  }
+
+  Future<void> setLanguageCode(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(languageKey, value == 'en' ? 'en' : 'es');
   }
 
   Future<bool> hideEmail() async {

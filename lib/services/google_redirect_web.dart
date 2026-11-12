@@ -38,6 +38,10 @@ String? _hashBody(String hash) {
   return hash.substring(1);
 }
 
+void forgetGoogleSession() {
+  web.window.sessionStorage.removeItem(_storageKey);
+}
+
 void openGoogleSignIn(String clientId) {
   final nonce = '${DateTime.now().microsecondsSinceEpoch}';
   final uri = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
