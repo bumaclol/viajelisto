@@ -37,6 +37,13 @@ class StorageService {
   static const listsVersionKey = 'packing_lists_version';
   static const tripsKey = 'trip_drafts_v1';
   static const draftKey = 'trip_draft_v1';
+  static const exampleSeedKey = 'example_trip_seeded_v1';
+  static const _samplePackedIds = {
+    'preset-playa-0',
+    'preset-playa-1',
+    'preset-playa-2',
+    'preset-playa-3',
+  };
 
   Future<List<PackingList>> loadLists() async {
     final prefs = await SharedPreferences.getInstance();
@@ -99,6 +106,36 @@ class StorageService {
   }
 
   Future<void> saveTrips(List<TripDraft> trips) => _writeTrips(trips);
+
+  /// Si el viaje guardado está en blanco, lo cambia una sola vez por el ejemplo.
+  /// Un viaje con destino o con kilómetros se deja como está.
+  Future<({bool applied, List<TripDraft> trips})> replaceBlankTripWithExample(
+    List<PackingList> lists,
+    List<TripDraft> trips,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(exampleSeedKey) == true) {
+      return (applied: false, trips: trips);
+    }
+    final blank = trips.isEmpty || trips.every((trip) => trip.isBlankDraft);
+    if (!blank) {
+      await prefs.setBool(exampleSeedKey, true);
+      return (applied: false, trips: trips);
+    }
+    final anyPacked = lists.any((list) => list.items.any((item) => item.packed));
+    if (!anyPacked) {
+      for (final list in lists) {
+        for (final item in list.items) {
+          if (_samplePackedIds.contains(item.id)) item.packed = true;
+        }
+      }
+    }
+    final example = [TripDraft.example()];
+    await saveLists(lists);
+    await saveTrips(example);
+    await prefs.setBool(exampleSeedKey, true);
+    return (applied: true, trips: example);
+  }
 
   Future<void> _writeTrips(List<TripDraft> trips) async {
     final prefs = await SharedPreferences.getInstance();

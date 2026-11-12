@@ -55,6 +55,32 @@ class TripDraft {
 
   String get title => name.trim().isEmpty ? 'Tu próximo viaje' : name.trim();
 
+  /// Borrador sin destino y sin kilómetros: todavía no es un viaje escrito.
+  bool get isBlankDraft => destination.trim().isEmpty && distance.trim().isEmpty;
+
+  /// Viaje de muestra para quien abre la app con el borrador vacío.
+  ///
+  /// 240 km (ida y vuelta) / 12 km/L = 20 L × $1.400 = $28.000.
+  /// Peajes $8.000 + snacks $6.000 = $42.000, o $14.000 por persona.
+  factory TripDraft.example() {
+    return TripDraft(
+      name: 'Fin de semana en la costa',
+      origin: 'Santiago',
+      destination: 'Valparaíso',
+      departDate: '13-11-2026',
+      returnDate: '15-11-2026',
+      includesReturn: true,
+      distance: '240',
+      consumption: '12',
+      fuelType: defaultFuelType,
+      fuelPrice: '1400',
+      tolls: '8000',
+      extras: [ExtraExpense(name: 'Snacks para el camino', amount: '6000')],
+      passengers: 3,
+      budget: '15000',
+    );
+  }
+
   String get route {
     final from = origin.trim();
     final to = destination.trim();

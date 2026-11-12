@@ -58,7 +58,7 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _reconcile() async {
+  Future<void> _reconcile({bool seededExample = false}) async {
     final remote = await _storage.fetchRemote();
     if (remote.error != null) {
       cloudSave = CloudSave.failed;
@@ -71,6 +71,12 @@ class AppController extends ChangeNotifier {
       return;
     }
     final remoteTrips = remote.trips.isEmpty ? [TripDraft()] : remote.trips;
+    if (seededExample && remoteTrips.every((trip) => trip.isBlankDraft)) {
+      lists = mergeLists(lists, remote.lists);
+      pendingMerge = null;
+      await _persist();
+      return;
+    }
     if (sameTripPayload(lists, trips, remote.lists, remoteTrips)) {
       cloudSave = CloudSave.saved;
       cloudSaveDetail = null;
@@ -123,6 +129,8 @@ class AppController extends ChangeNotifier {
       lists = await _storage.loadLists();
       trips = await _storage.loadTrips();
       if (trips.isEmpty) trips = [TripDraft()];
+      final seed = await _storage.replaceBlankTripWithExample(lists, trips);
+      trips = seed.trips;
       sessionEmail = await _storage.sessionEmail();
       sessionName = await _storage.sessionName();
       sessionPhoto = await _storage.sessionPhoto();
@@ -130,7 +138,7 @@ class AppController extends ChangeNotifier {
       notificationsEnabled = await _storage.notificationsEnabled();
       languageCode = await _storage.languageCode();
       hideEmail = await _storage.hideEmail();
-      if (signedIn && usesCloud) await _reconcile();
+      if (signedIn && usesCloud) await _reconcile(seededExample: seed.applied);
     } finally {
       loading = false;
       notifyListeners();

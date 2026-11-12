@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:viajelisto/main.dart';
+import 'package:viajelisto/models/trip_draft.dart';
 import 'package:viajelisto/services/storage_service.dart';
 import 'package:viajelisto/state/app_controller.dart';
 
@@ -115,6 +118,13 @@ void main() {
     await tester.enterText(fields.at(2), '1000');
     await tester.enterText(fields.at(3), '2');
     await tester.enterText(fields.at(4), '5000');
+    final amounts = find.byWidgetPredicate(
+      (widget) => widget is TextField && widget.decoration?.labelText == 'Monto',
+    );
+    for (var i = 0; i < amounts.evaluate().length; i++) {
+      await tester.ensureVisible(amounts.at(i));
+      await tester.enterText(amounts.at(i), '');
+    }
     await tester.pump();
 
     expect(find.text('Compartir resumen'), findsOneWidget);
@@ -170,6 +180,76 @@ void main() {
       second.lists.firstWhere((list) => list.id == 'preset-playa').items.first.packed,
       isFalse,
     );
+  });
+
+  test('la primera visita abre el ejemplo de la costa', () async {
+    final controller = AppController(StorageService());
+    await controller.load();
+    expect(controller.trips.first.name, 'Fin de semana en la costa');
+    expect(controller.trips.first.destination, 'Valparaíso');
+    expect(controller.trips.first.distance, '240');
+    expect(
+      controller.lists.firstWhere((list) => list.id == 'preset-playa').items.first.packed,
+      isTrue,
+    );
+  });
+
+  test('reemplaza una sola vez el viaje en blanco por el ejemplo', () async {
+    SharedPreferences.setMockInitialValues({
+      'trip_drafts_v1': jsonEncode([TripDraft().toJson()]),
+    });
+    final first = AppController(StorageService());
+    await first.load();
+    final trip = first.trips.first;
+    expect(trip.name, 'Fin de semana en la costa');
+    expect(trip.origin, 'Santiago');
+    expect(trip.destination, 'Valparaíso');
+    expect(trip.distance, '240');
+    expect(trip.consumption, '12');
+    expect(trip.fuelPrice, '1400');
+    expect(trip.tolls, '8000');
+    expect(trip.passengers, 3);
+    expect(trip.budget, '15000');
+    expect(trip.extras.single.name, 'Snacks para el camino');
+    expect(trip.extras.single.amount, '6000');
+    expect(trip.departDate, '13-11-2026');
+    expect(trip.returnDate, '15-11-2026');
+
+    trip.destination = '';
+    trip.distance = '';
+    await first.updateTrips([trip]);
+
+    final second = AppController(StorageService());
+    await second.load();
+    expect(second.trips.first.destination, isEmpty);
+    expect(second.trips.first.distance, isEmpty);
+    expect(second.trips.first.name, 'Fin de semana en la costa');
+  });
+
+  test('no pisa un viaje que ya tiene destino o kilómetros', () async {
+    SharedPreferences.setMockInitialValues({
+      'trip_drafts_v1': jsonEncode([
+        TripDraft(name: 'Sur', origin: 'Temuco', destination: 'Pucón', passengers: 4).toJson(),
+      ]),
+    });
+    final withDestination = AppController(StorageService());
+    await withDestination.load();
+    expect(withDestination.trips.first.destination, 'Pucón');
+    expect(withDestination.trips.first.name, 'Sur');
+    expect(withDestination.trips.first.passengers, 4);
+    expect(
+      withDestination.lists.firstWhere((list) => list.id == 'preset-playa').items.first.packed,
+      isFalse,
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'trip_drafts_v1': jsonEncode([TripDraft(distance: '50').toJson()]),
+    });
+    final withDistance = AppController(StorageService());
+    await withDistance.load();
+    expect(withDistance.trips.first.distance, '50');
+    expect(withDistance.trips.first.destination, isEmpty);
+    expect(withDistance.trips.first.name, isEmpty);
   });
 
   test('guarda la cuenta en la base de datos', () async {
