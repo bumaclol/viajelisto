@@ -17,7 +17,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
-from fastapi import FastAPI, Header, Request
+from fastapi import BackgroundTasks, FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
@@ -198,6 +198,14 @@ def issue_code(connection, user_id: int, kind: str, minutes: int) -> str:
     return code
 
 
+def enviar_confirmacion_en_segundo_plano(email: str, user_id: int, code: str) -> None:
+    if enviar_codigo(email, code, minutos=15):
+        return
+    print("correo_confirmacion_no_enviado")
+    with _LOCK, connect() as connection:
+        connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, "verify"))
+
+
 def take_token(connection, token: str, kind: str):
     row = connection.execute(
         """
@@ -363,7 +371,7 @@ def salud() -> dict:
 # 8. RUTAS DE AUTENTICACIÓN Y GESTIÓN DE CUENTAS
 # ==========================================
 @app.post("/auth/registro")
-def registro(body: RegistroIn, request: Request):
+def registro(body: RegistroIn, request: Request, background_tasks: BackgroundTasks):
     if limited(request, "registro"):
         return fail(429, "Demasiados intentos. Espera unos minutos.")
     name = body.name.strip()
@@ -387,12 +395,8 @@ def registro(body: RegistroIn, request: Request):
         )
         user_id = cursor.lastrowid
         code = issue_code(connection, user_id, "verify", 15)
-    if enviar_codigo(email, code, minutos=15):
-        return {"ok": True, "mensaje": "Revisa tu correo para confirmar la cuenta."}
-    with _LOCK, connect() as connection:
-        connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, "verify"))
-        connection.execute("DELETE FROM users WHERE id = ? AND verified = 0", (user_id,))
-    return fail(503, "No se pudo enviar el correo de confirmación. Inténtalo más tarde.")
+    background_tasks.add_task(enviar_confirmacion_en_segundo_plano, email, user_id, code)
+    return {"ok": True, "mensaje": "La cuenta se creó. Revisa tu correo para confirmar."}
 
 
 @app.post("/auth/social")
@@ -473,6 +477,33 @@ def confirmar(body: TokenIn, request: Request):
         connection.execute("UPDATE users SET verified = 1 WHERE id = ?", (row["id"],))
         connection.execute("DELETE FROM tokens WHERE token = ?", (body.token.strip(),))
     return {"ok": True}
+
+
+@app.post("/auth/reenviar-confirmacion")
+def reenviar_confirmacion(body: CorreoIn, request: Request):
+    if limited(request, "reenviar_confirmacion"):
+        return fail(429, "Demasiados intentos. Espera unos minutos.")
+    email = body.direccion()
+    if not looks_like_email(email):
+        return fail(400, "Escribe un correo válido.")
+    if not correo_disponible():
+        return fail(503, "El servidor no tiene un proveedor de correo conectado para enviar el código.")
+
+    code = None
+    user_id = None
+    with _LOCK, connect() as connection:
+        row = connection.execute(
+            "SELECT id, verified FROM users WHERE email = ?",
+            (email,),
+        ).fetchone()
+        if row is not None and not row["verified"]:
+            user_id = row["id"]
+            code = issue_code(connection, user_id, "verify", 15)
+    if code is not None and not enviar_codigo(email, code, minutos=15):
+        with _LOCK, connect() as connection:
+            connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, "verify"))
+        return fail(503, "No se pudo enviar el correo. Inténtalo más tarde.")
+    return {"ok": True, "mensaje": "Si la cuenta requiere confirmación, enviaremos un nuevo código."}
 
 
 @app.post("/auth/entrar")

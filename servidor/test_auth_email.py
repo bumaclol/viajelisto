@@ -1,10 +1,10 @@
-import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from starlette.background import BackgroundTasks
 from starlette.requests import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -44,6 +44,7 @@ class RegistrationOtpTests(unittest.TestCase):
 
     def test_registration_sends_six_digit_code_and_confirms_account(self):
         sent = []
+        background_tasks = BackgroundTasks()
 
         def capture_code(email, code, minutos=15):
             sent.append((email, code, minutos))
@@ -56,7 +57,12 @@ class RegistrationOtpTests(unittest.TestCase):
             result = server.registro(
                 server.RegistroIn(name="Test", email="test@example.com", password="secret1"),
                 request_from("127.0.0.1"),
+                background_tasks,
             )
+            self.assertEqual(sent, [])
+            self.assertEqual(len(background_tasks.tasks), 1)
+            task = background_tasks.tasks[0]
+            task.func(*task.args, **task.kwargs)
 
         self.assertIn("Revisa tu correo", result["mensaje"])
         self.assertEqual(sent[0][0], "test@example.com")
@@ -69,7 +75,8 @@ class RegistrationOtpTests(unittest.TestCase):
         )
         self.assertEqual(confirmed, {"ok": True})
 
-    def test_registration_does_not_create_account_when_email_fails(self):
+    def test_failed_background_send_can_be_retried(self):
+        background_tasks = BackgroundTasks()
         with (
             patch.object(server, "correo_disponible", return_value=True),
             patch.object(server, "enviar_codigo", return_value=False),
@@ -77,15 +84,43 @@ class RegistrationOtpTests(unittest.TestCase):
             result = server.registro(
                 server.RegistroIn(name="Test", email="test@example.com", password="secret1"),
                 request_from("127.0.0.1"),
+                background_tasks,
             )
+            task = background_tasks.tasks[0]
+            task.func(*task.args, **task.kwargs)
 
-        self.assertEqual(result.status_code, 503)
-        self.assertIn("No se pudo enviar", json.loads(result.body)["error"])
         with db.connect() as connection:
             row = connection.execute(
-                "SELECT id FROM users WHERE email = ?", ("test@example.com",)
+                "SELECT id, verified FROM users WHERE email = ?", ("test@example.com",)
             ).fetchone()
-        self.assertIsNone(row)
+            tokens = connection.execute(
+                "SELECT token FROM tokens WHERE user_id = ? AND kind = ?",
+                (row["id"], "verify"),
+            ).fetchall()
+        self.assertEqual(row["verified"], 0)
+        self.assertEqual(tokens, [])
+
+        sent = []
+        with (
+            patch.object(server, "correo_disponible", return_value=True),
+            patch.object(
+                server,
+                "enviar_codigo",
+                side_effect=lambda email, code, minutos=15: sent.append(code) or True,
+            ),
+        ):
+            result = server.reenviar_confirmacion(
+                server.CorreoIn(email="test@example.com"),
+                request_from("127.0.0.2"),
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertRegex(sent[0], r"^\d{6}$")
+        confirmed = server.confirmar(
+            server.TokenIn(token=sent[0]),
+            request_from("127.0.0.3"),
+        )
+        self.assertEqual(confirmed, {"ok": True})
 
 
 if __name__ == "__main__":

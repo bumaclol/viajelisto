@@ -626,6 +626,14 @@ class StorageService {
     return null;
   }
 
+  Future<String?> resendConfirmation(String email) async {
+    final cleanEmail = email.trim().toLowerCase();
+    if (!_looksLikeEmail(cleanEmail)) return 'Escribe un correo válido.';
+    if (cloud == null) return 'El servidor no está activo.';
+    final reply = await cloud!.post('/auth/reenviar-confirmacion', {'email': cleanEmail});
+    return reply.error;
+  }
+
   Future<String?> requestRecovery(String email) async {
     final cleanEmail = email.trim().toLowerCase();
     if (!_looksLikeEmail(cleanEmail)) return 'Escribe un correo válido.';

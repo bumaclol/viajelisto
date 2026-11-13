@@ -268,6 +268,13 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                               style: const TextStyle(color: warn, fontWeight: FontWeight.w600),
                             ),
                           ],
+                          if (_awaitingVerify) ...[
+                            const SizedBox(height: 4),
+                            TextButton(
+                              onPressed: _busy ? null : _resendConfirmation,
+                              child: const Text('Reenviar código'),
+                            ),
+                          ],
                           const SizedBox(height: 18),
                           FilledButton(
                             onPressed: _busy ? null : _submit,
@@ -385,6 +392,25 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       _error = error;
     });
     _closeIfInside();
+  }
+
+  Future<void> _resendConfirmation() async {
+    final controller = context.read<AppController>();
+    setState(() {
+      _busy = true;
+      _error = null;
+      _success = null;
+    });
+    final error = await controller.resendConfirmation(_email.text);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (error == null) {
+        _success = 'Si la cuenta requiere confirmación, recibirás un nuevo código.';
+      } else {
+        _error = error;
+      }
+    });
   }
 
   void _closeIfInside() {
@@ -552,7 +578,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         _password.clear();
         _confirm.clear();
         _mailCode.clear();
-        _success = 'Revisa tu correo y escribe el código que te llegó. No aparece en esta pantalla.';
+        _success = 'Estamos enviando el código. Escríbelo aquí cuando llegue.';
       }
     });
     _closeIfInside();

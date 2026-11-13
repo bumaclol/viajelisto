@@ -26,13 +26,13 @@ Para comprobar que el servidor responde, abre `https://viajelisto.onrender.com/s
 
 ## Confirmación de cuenta por correo
 
-Al registrarse, la app envía un código OTP de 6 dígitos, válido durante 15 minutos. En Render configura un proveedor de correo para el servicio:
+Al registrarse, la app crea la cuenta sin esperar la entrega del correo y envía un código OTP de 6 dígitos en segundo plano. El código vence en 15 minutos; si no llega, puedes reenviarlo desde la pantalla de confirmación. En Render configura un proveedor de correo para el servicio:
 
 - Brevo: `BREVO_API_KEY` y `MAIL_FROM` con un remitente verificado.
 - Resend: `RESEND_API_KEY` y `MAIL_FROM` con un dominio/remitente verificado.
 - SMTP: `MAIL_SERVER`, `MAIL_USERNAME` y `MAIL_PASSWORD`. Usa STARTTLS en el puerto 587; si falla, el servidor intenta SSL en el 465.
 
-Si el correo no está configurado o no se puede enviar, el registro no activa la cuenta.
+Si el correo no está configurado, el registro no activa la cuenta. Si un envío falla después de crearla, la cuenta queda pendiente de confirmación y puedes pedir otro código.
 
 ## Esquema de la base de datos
 

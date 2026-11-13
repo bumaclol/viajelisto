@@ -288,6 +288,10 @@ class AppController extends ChangeNotifier {
     return error;
   }
 
+  Future<String?> resendConfirmation(String email) {
+    return _storage.resendConfirmation(email);
+  }
+
   Future<String?> requestRecovery(String email) async {
     final error = await _storage.requestRecovery(email);
     pendingToken = _storage.pendingToken;
