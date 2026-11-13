@@ -26,6 +26,10 @@ La primera visita puede demorar cerca de un minuto si el servicio gratis de Rend
 
 Para comprobar que el servidor responde, abre `https://viajelisto.onrender.com/salud`. Tiene que decir `"ok": true`.
 
+## Despliegue del servidor en Render
+
+Render debe desplegar la rama `servidor/render` con `servidor` como directorio raíz. Esa carpeta contiene `.python-version` para usar Python 3.14 y `requirements.txt` con las dependencias del servidor. Configura `SUPABASE_DB_URL` en el servicio para guardar cuentas y datos en Supabase; sin esa variable el servidor usa SQLite local.
+
 ## Confirmación de cuenta por correo
 
 Al registrarse, la app crea la cuenta sin esperar la entrega del correo y envía un código OTP de 6 dígitos en segundo plano. El código vence en 15 minutos; si no llega, puedes reenviarlo desde la pantalla de confirmación. En Render configura un proveedor de correo para el servicio:
