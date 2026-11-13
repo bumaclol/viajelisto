@@ -27,8 +27,15 @@ class StorageService {
 
   final CloudApi? cloud;
   String? pendingToken;
+  bool _restoreAccountDataOnNextLogin = false;
 
   bool get usesCloud => cloud != null;
+
+  bool takeAccountDataRestoreRequest() {
+    final shouldRestore = _restoreAccountDataOnNextLogin;
+    _restoreAccountDataOnNextLogin = false;
+    return shouldRestore;
+  }
 
   Future<void> warmCloud() async {
     await cloud?.get('/salud');
@@ -203,6 +210,7 @@ class StorageService {
   }
 
   static const sessionTokenKey = 'session_token_v1';
+  static const _lastSignedOutEmailKey = 'last_signed_out_email_v1';
   static const sessionKey = 'session_email_v1';
   static const sessionNameKey = 'session_name_v1';
   static const sessionPhotoKey = 'session_photo_v1';
@@ -701,6 +709,10 @@ class StorageService {
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString(sessionKey);
+    if (email != null && email.isNotEmpty) {
+      await prefs.setString(_lastSignedOutEmailKey, email);
+    }
     await prefs.remove(sessionTokenKey);
     await prefs.remove(sessionKey);
     await prefs.remove(sessionNameKey);
@@ -719,6 +731,12 @@ class StorageService {
     String? phone,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    final lastSignedOutEmail = prefs.getString(_lastSignedOutEmailKey);
+    _restoreAccountDataOnNextLogin =
+        lastSignedOutEmail != null && lastSignedOutEmail == email.trim().toLowerCase();
+    if (lastSignedOutEmail != null) {
+      await prefs.remove(_lastSignedOutEmailKey);
+    }
     await prefs.setString(sessionKey, email);
     await prefs.setString(sessionNameKey, name);
     if (photo == null || photo.isEmpty) {

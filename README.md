@@ -6,6 +6,8 @@ La cuenta, las listas y el viaje se guardan en el servidor:
 
 `https://viajelisto.onrender.com`
 
+Al volver a iniciar sesión con el mismo correo y contraseña, se recuperan las listas y el viaje guardados en esa cuenta.
+
 ## Cómo abrirla
 
 1. Instala Flutter.
@@ -36,7 +38,7 @@ Si el correo no está configurado, el registro no activa la cuenta. Si un envío
 
 ## Esquema de la base de datos
 
-Este esquema define las tablas de usuarios y datos guardados. El servidor crea su tabla `tokens` al iniciar para gestionar OTP, sesiones y recuperación de contraseña; por eso no aparece aquí.
+Este esquema define las tablas de usuarios, datos guardados y perfiles de Supabase Auth. El servidor crea su tabla `tokens` al iniciar para gestionar OTP, sesiones y recuperación de contraseña; por eso no aparece aquí.
 
 ```sql
 -- Esquema usado por servidor/app.py. Las contrasenas se guardan como hash.
@@ -59,6 +61,20 @@ create table if not exists public.user_data (
   trips_json text not null
 );
 
+-- Perfiles creados por Supabase Auth. Las contrasenas y los OTP permanecen
+-- exclusivamente en auth.users.
+create table if not exists public.profiles (
+  id uuid primary key references auth.users (id) on delete cascade,
+  email text not null unique,
+  email_confirmed_at timestamptz,
+  display_name text not null default '',
+  phone text,
+  photo text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+-- Complementa cada cuenta de Supabase Auth con sus datos visibles de perfil.
+
 alter table public.users enable row level security;
 alter table public.user_data enable row level security;
 
@@ -67,9 +83,95 @@ revoke all on public.user_data from anon, authenticated;
 
 alter table public.users enable row level security;
 alter table public.user_data enable row level security;
+alter table public.profiles enable row level security;
 
 revoke all on public.users from anon, authenticated;
 revoke all on public.user_data from anon, authenticated;
+revoke all on public.profiles from anon, authenticated;
+grant select on public.profiles to authenticated;
+grant update (display_name, phone, photo)
+  on public.profiles to authenticated;
+
+drop policy if exists "Users can read their own profile" on public.profiles;
+create policy "Users can read their own profile"
+  on public.profiles
+  for select
+  to authenticated
+  using ((select auth.uid()) = id);
+
+drop policy if exists "Users can update their own profile" on public.profiles;
+create policy "Users can update their own profile"
+  on public.profiles
+  for update
+  to authenticated
+  using ((select auth.uid()) = id)
+  with check ((select auth.uid()) = id);
+
+create or replace function public.handle_auth_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.email is not null then
+    insert into public.profiles (
+      id, email, email_confirmed_at, display_name
+    )
+    values (
+      new.id,
+      new.email,
+      new.email_confirmed_at,
+      coalesce(new.raw_user_meta_data ->> 'name', '')
+    )
+    on conflict (id) do update
+      set email = excluded.email,
+          email_confirmed_at = excluded.email_confirmed_at;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_auth_user();
+
+drop trigger if exists on_auth_user_email_updated on auth.users;
+create trigger on_auth_user_email_updated
+  after update of email, email_confirmed_at on auth.users
+  for each row execute function public.handle_auth_user();
+
+create or replace function public.set_profile_updated_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists set_profiles_updated_at on public.profiles;
+create trigger set_profiles_updated_at
+  before update on public.profiles
+  for each row execute function public.set_profile_updated_at();
+
+insert into public.profiles (
+  id, email, email_confirmed_at, display_name
+)
+select
+  id,
+  email,
+  email_confirmed_at,
+  coalesce(raw_user_meta_data ->> 'name', '')
+from auth.users
+where email is not null
+on conflict (id) do update
+  set email = excluded.email,
+      email_confirmed_at = excluded.email_confirmed_at;
 
 -- Aplicar el comando `git pull`
 ```

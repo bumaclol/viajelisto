@@ -75,6 +75,20 @@ class RegistrationOtpTests(unittest.TestCase):
         )
         self.assertEqual(confirmed, {"ok": True})
 
+        with db.connect() as connection:
+            user = connection.execute(
+                "SELECT name, email, verified FROM users WHERE email = ?",
+                ("test@example.com",),
+            ).fetchone()
+        self.assertEqual(user["name"], "Test")
+        self.assertEqual(user["verified"], 1)
+
+        login = server.entrar(
+            server.EntrarIn(email="test@example.com", password="secret1"),
+            request_from("127.0.0.4"),
+        )
+        self.assertTrue(login["token"])
+
     def test_failed_background_send_can_be_retried(self):
         background_tasks = BackgroundTasks()
         with (
