@@ -24,9 +24,19 @@ La primera visita puede demorar cerca de un minuto si el servicio gratis de Rend
 
 Para comprobar que el servidor responde, abre `https://viajelisto.onrender.com/salud`. Tiene que decir `"ok": true`.
 
+## Confirmación de cuenta por correo
+
+Al registrarse, la app envía un código OTP de 6 dígitos, válido durante 15 minutos. En Render configura un proveedor de correo para el servicio:
+
+- Brevo: `BREVO_API_KEY` y `MAIL_FROM` con un remitente verificado.
+- Resend: `RESEND_API_KEY` y `MAIL_FROM` con un dominio/remitente verificado.
+- SMTP: `MAIL_SERVER`, `MAIL_USERNAME` y `MAIL_PASSWORD`. Usa STARTTLS en el puerto 587; si falla, el servidor intenta SSL en el 465.
+
+Si el correo no está configurado o no se puede enviar, el registro no activa la cuenta.
+
 ## Esquema de la base de datos
 
-El esquema SQL usado por el servidor y la autenticación de Supabase es:
+Este esquema define las tablas de usuarios y datos guardados. El servidor crea su tabla `tokens` al iniciar para gestionar OTP, sesiones y recuperación de contraseña; por eso no aparece aquí.
 
 ```sql
 -- Esquema usado por servidor/app.py. Las contrasenas se guardan como hash.
@@ -43,13 +53,6 @@ create table if not exists public.users (
   verified integer not null default 0
 );
 
-create table if not exists public.tokens (
-  token text primary key,
-  user_id integer not null references public.users (id) on delete cascade,
-  kind text not null,
-  expires_at text not null
-);
-
 create table if not exists public.user_data (
   user_id integer primary key references public.users (id) on delete cascade,
   lists_json text not null,
@@ -57,129 +60,16 @@ create table if not exists public.user_data (
 );
 
 alter table public.users enable row level security;
-alter table public.tokens enable row level security;
 alter table public.user_data enable row level security;
 
 revoke all on public.users from anon, authenticated;
-revoke all on public.tokens from anon, authenticated;
 revoke all on public.user_data from anon, authenticated;
-
--- Perfiles creados por Supabase Auth. Las contrasenas y los OTP permanecen
--- exclusivamente en auth.users.
-create table if not exists public.profiles (
-  id uuid primary key references auth.users (id) on delete cascade,
-  email text not null unique,
-  email_confirmed_at timestamptz,
-  display_name text not null default '',
-  phone text,
-  photo text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
--- Complementa cada cuenta de Supabase Auth con sus datos visibles de perfil.
-
-create table if not exists public.supabase_user_data (
-  user_id uuid primary key references auth.users (id) on delete cascade,
-  lists_json text not null,
-  trips_json text not null
-);
--- Conserva listas y viajes para cuentas administradas por Supabase Auth.
 
 alter table public.users enable row level security;
-alter table public.tokens enable row level security;
 alter table public.user_data enable row level security;
-alter table public.profiles enable row level security;
-alter table public.supabase_user_data enable row level security;
 
 revoke all on public.users from anon, authenticated;
-revoke all on public.tokens from anon, authenticated;
 revoke all on public.user_data from anon, authenticated;
-revoke all on public.supabase_user_data from anon, authenticated;
-revoke all on public.profiles from anon, authenticated;
-grant select on public.profiles to authenticated;
-grant update (display_name, phone, photo)
-  on public.profiles to authenticated;
-
-drop policy if exists "Users can read their own profile" on public.profiles;
-create policy "Users can read their own profile"
-  on public.profiles
-  for select
-  to authenticated
-  using ((select auth.uid()) = id);
-
-drop policy if exists "Users can update their own profile" on public.profiles;
-create policy "Users can update their own profile"
-  on public.profiles
-  for update
-  to authenticated
-  using ((select auth.uid()) = id)
-  with check ((select auth.uid()) = id);
-
-create or replace function public.handle_auth_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  if new.email is not null then
-    insert into public.profiles (
-      id, email, email_confirmed_at, display_name
-    )
-    values (
-      new.id,
-      new.email,
-      new.email_confirmed_at,
-      coalesce(new.raw_user_meta_data ->> 'name', '')
-    )
-    on conflict (id) do update
-      set email = excluded.email,
-          email_confirmed_at = excluded.email_confirmed_at;
-  end if;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_auth_user();
-
-drop trigger if exists on_auth_user_email_updated on auth.users;
-create trigger on_auth_user_email_updated
-  after update of email, email_confirmed_at on auth.users
-  for each row execute function public.handle_auth_user();
-
-create or replace function public.set_profile_updated_at()
-returns trigger
-language plpgsql
-set search_path = ''
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
-
-drop trigger if exists set_profiles_updated_at on public.profiles;
-create trigger set_profiles_updated_at
-  before update on public.profiles
-  for each row execute function public.set_profile_updated_at();
-
-insert into public.profiles (
-  id, email, email_confirmed_at, display_name
-)
-select
-  id,
-  email,
-  email_confirmed_at,
-  coalesce(raw_user_meta_data ->> 'name', '')
-from auth.users
-where email is not null
-on conflict (id) do update
-  set email = excluded.email,
-      email_confirmed_at = excluded.email_confirmed_at;
 
 -- Aplicar el comando `git pull`
 ```

@@ -184,6 +184,20 @@ def issue_token(connection, user_id: int, kind: str, hours: int) -> str:
     return token
 
 
+def issue_code(connection, user_id: int, kind: str, minutes: int) -> str:
+    connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, kind))
+    while True:
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        exists = connection.execute("SELECT 1 FROM tokens WHERE token = ?", (code,)).fetchone()
+        if exists is None:
+            break
+    connection.execute(
+        "INSERT INTO tokens (token, user_id, kind, expires_at) VALUES (?, ?, ?, ?)",
+        (code, user_id, kind, stamp(now() + timedelta(minutes=minutes))),
+    )
+    return code
+
+
 def take_token(connection, token: str, kind: str):
     row = connection.execute(
         """
@@ -360,6 +374,8 @@ def registro(body: RegistroIn, request: Request):
         return fail(400, "Escribe un correo válido.")
     if len(body.password) < 6:
         return fail(400, "La contraseña necesita al menos 6 caracteres.")
+    if not correo_disponible():
+        return fail(503, "El servidor no tiene un proveedor de correo conectado para enviar el código.")
 
     with _LOCK, connect() as connection:
         existing = connection.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
@@ -369,20 +385,14 @@ def registro(body: RegistroIn, request: Request):
             "INSERT INTO users (name, email, password_hash, verified) VALUES (?, ?, ?, 0)",
             (name, email, hash_password(body.password)),
         )
-        token = issue_token(connection, cursor.lastrowid, "verify", 24)
-    if enviar_codigo(email, token, minutos=24 * 60):
+        user_id = cursor.lastrowid
+        code = issue_code(connection, user_id, "verify", 15)
+    if enviar_codigo(email, code, minutos=15):
         return {"ok": True, "mensaje": "Revisa tu correo para confirmar la cuenta."}
     with _LOCK, connect() as connection:
-        connection.execute("DELETE FROM tokens WHERE token = ?", (token,))
-        connection.execute("UPDATE users SET verified = 1 WHERE email = ?", (email,))
-        row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-        session = issue_token(connection, row["id"], "session", 24 * 30)
-    return {
-        "ok": True,
-        "token": session,
-        "mensaje": "La cuenta quedó creada. No se pudo enviar el correo de confirmación.",
-        **public_user(row),
-    }
+        connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, "verify"))
+        connection.execute("DELETE FROM users WHERE id = ? AND verified = 0", (user_id,))
+    return fail(503, "No se pudo enviar el correo de confirmación. Inténtalo más tarde.")
 
 
 @app.post("/auth/social")
@@ -453,7 +463,9 @@ def google_login(body: GoogleIn, request: Request):
 
 
 @app.post("/auth/confirmar")
-def confirmar(body: TokenIn):
+def confirmar(body: TokenIn, request: Request):
+    if limited(request, "confirmar"):
+        return fail(429, "Demasiados intentos. Espera unos minutos.")
     with _LOCK, connect() as connection:
         row = take_token(connection, body.token.strip(), "verify")
         if row is None:
@@ -703,12 +715,7 @@ def solicitar_codigo(body: CorreoIn, request: Request):
         row = connection.execute("SELECT id, verified FROM users WHERE email = ?", (email,)).fetchone()
         if row is not None and row["verified"]:
             user_id = row["id"]
-            code = f"{secrets.randbelow(1_000_000):06d}"
-            connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, "login"))
-            connection.execute(
-                "INSERT INTO tokens (token, user_id, kind, expires_at) VALUES (?, ?, ?, ?)",
-                (code, user_id, "login", stamp(now() + timedelta(minutes=15))),
-            )
+            code = issue_code(connection, user_id, "login", 15)
     if code is not None and not enviar_codigo(email, code):
         with _LOCK, connect() as connection:
             connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (user_id, "login"))
