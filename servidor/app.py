@@ -102,35 +102,8 @@ def _cuando(value) -> datetime:
 
 
 def init_db() -> None:
-    if usa_supabase():
-        with _LOCK, connect() as connection:
-            iniciar_supabase(connection)
-        return
     with _LOCK, connect() as connection:
-        connection.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-              id INTEGER PRIMARY KEY,
-              name TEXT NOT NULL,
-              email TEXT UNIQUE NOT NULL,
-              password_hash TEXT NOT NULL,
-              phone TEXT,
-              photo TEXT,
-              verified INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE IF NOT EXISTS tokens (
-              token TEXT PRIMARY KEY,
-              user_id INTEGER NOT NULL,
-              kind TEXT NOT NULL,
-              expires_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS user_data (
-              user_id INTEGER PRIMARY KEY,
-              lists_json TEXT NOT NULL,
-              trips_json TEXT NOT NULL
-            );
-            """
-        )
+        iniciar_supabase(connection)
 
 
 # ==========================================
