@@ -1,13 +1,8 @@
-"""Conexión a Supabase (Postgres) o al SQLite local si todavía no hay clave."""
+"""Conexión a Supabase (Postgres)."""
 
 from __future__ import annotations
 
 import os
-import sqlite3
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent
-DB_PATH = ROOT / "datos" / "nube.db"
 
 
 def supabase_url() -> str:
@@ -82,12 +77,9 @@ class ConexionSupabase:
 
 def connect():
     url = supabase_url()
-    if url:
-        return ConexionSupabase(url)
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
+    if not url:
+        raise RuntimeError("Falta SUPABASE_DB_URL")
+    return ConexionSupabase(url)
 
 
 def _tiene_sql(texto: str) -> bool:

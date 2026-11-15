@@ -1,5 +1,5 @@
+import os
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -30,17 +30,14 @@ def request_from(ip: str) -> Request:
     )
 
 
+@unittest.skipUnless(
+    os.environ.get("VIAJELISTO_TEST_DB") == "1" and db.supabase_url(),
+    "Requieren una base de Supabase de prueba",
+)
 class RegistrationOtpTests(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.old_db_path = db.DB_PATH
-        db.DB_PATH = Path(self.temp_dir.name) / "test.sqlite"
         server._ATTEMPTS.clear()
         server.init_db()
-
-    def tearDown(self):
-        db.DB_PATH = self.old_db_path
-        self.temp_dir.cleanup()
 
     def test_registration_sends_six_digit_code_and_confirms_account(self):
         sent = []
