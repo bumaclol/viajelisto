@@ -72,6 +72,8 @@ create trigger sesion_solo_cuenta_verificada
   for each row
   execute function public.sesion_solo_cuenta_verificada();
 
+-- Una cuenta de Google se guarda igual, y queda verificada
+-- porque Google ya confirmó ese correo.
 create or replace function public.cuenta_google_verificada()
 returns trigger
 language plpgsql
