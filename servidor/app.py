@@ -728,22 +728,34 @@ def solicitar_codigo(body: CorreoIn, request: Request):
 
 
 @app.post("/api/verificar-ingreso")
-def verificar_ingreso(body: VerificarIngresoIn):
+def verificar_ingreso(body: VerificarIngresoIn, request: Request):
+    if blocked(request, "verificar_ingreso"):
+        return fail(429, "Demasiados intentos. Espera unos minutos.")
     email = body.correo.strip().lower()
     code = body.codigo.strip()
+    if (
+        not looks_like_email(email)
+        or len(code) != 6
+        or any(digit not in "0123456789" for digit in code)
+    ):
+        note_attempt(request, "verificar_ingreso")
+        return fail(400, "Código inválido.")
     with _LOCK, connect() as connection:
         row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-        if row is None:
+        if row is None or not row["verified"]:
+            note_attempt(request, "verificar_ingreso")
             return fail(400, "Código inválido.")
         saved = connection.execute(
             "SELECT expires_at FROM tokens WHERE user_id = ? AND kind = ? AND token = ?",
             (row["id"], "login", code),
         ).fetchone()
         if saved is None or _cuando(saved["expires_at"]) < now():
+            note_attempt(request, "verificar_ingreso")
             return fail(400, "Código inválido.")
         connection.execute("DELETE FROM tokens WHERE user_id = ? AND kind = ?", (row["id"], "login"))
         token = issue_token(connection, row["id"], "session", 24 * 30)
         user = public_user(row)
+    _ATTEMPTS.pop(client_key(request, "verificar_ingreso"), None)
     return {"success": True, "token": token, **user}
 
 

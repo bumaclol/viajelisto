@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import sys
 import unittest
 from pathlib import Path
@@ -132,6 +133,90 @@ class RegistrationOtpTests(unittest.TestCase):
             request_from("127.0.0.3"),
         )
         self.assertEqual(confirmed, {"ok": True})
+
+
+class LoginOtpTests(unittest.TestCase):
+    def setUp(self):
+        server._ATTEMPTS.clear()
+        self.connection = sqlite3.connect(":memory:")
+        self.connection.row_factory = sqlite3.Row
+        self.connection.executescript(
+            """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                phone TEXT,
+                photo TEXT,
+                verified INTEGER NOT NULL,
+                provider TEXT NOT NULL
+            );
+            CREATE TABLE tokens (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                UNIQUE (user_id, kind)
+            );
+            INSERT INTO users (id, name, email, password_hash, verified, provider)
+            VALUES (1, 'Test', 'test@example.com', 'unused', 1, 'password');
+            """
+        )
+        self.connection.commit()
+        self.connect_patch = patch.object(server, "connect", return_value=self.connection)
+        self.connect_patch.start()
+        self.addCleanup(self.connect_patch.stop)
+        self.addCleanup(self.connection.close)
+
+    def test_email_code_creates_one_time_session(self):
+        sent = []
+
+        with (
+            patch.object(server, "correo_disponible", return_value=True),
+            patch.object(
+                server,
+                "enviar_codigo",
+                side_effect=lambda email, code: sent.append((email, code)) or True,
+            ),
+        ):
+            result = server.solicitar_codigo(
+                server.CorreoIn(correo="TEST@example.com"),
+                request_from("127.0.0.1"),
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(sent[0][0], "test@example.com")
+        self.assertRegex(sent[0][1], r"^\d{6}$")
+
+        login = server.verificar_ingreso(
+            server.VerificarIngresoIn(correo="test@example.com", codigo=sent[0][1]),
+            request_from("127.0.0.2"),
+        )
+
+        self.assertTrue(login["success"])
+        self.assertTrue(login["token"])
+        self.assertIsNone(
+            self.connection.execute(
+                "SELECT token FROM tokens WHERE user_id = 1 AND kind = 'login'"
+            ).fetchone()
+        )
+        self.assertIsNotNone(
+            self.connection.execute(
+                "SELECT token FROM tokens WHERE user_id = 1 AND kind = 'session'"
+            ).fetchone()
+        )
+
+    def test_login_code_verification_rejects_malformed_and_limits_attempts(self):
+        request = request_from("127.0.0.3")
+        body = server.VerificarIngresoIn(correo="test@example.com", codigo="123")
+
+        for _ in range(server._MAX_ATTEMPTS):
+            result = server.verificar_ingreso(body, request)
+            self.assertEqual(result.status_code, 400)
+
+        limited_result = server.verificar_ingreso(body, request)
+        self.assertEqual(limited_result.status_code, 429)
 
 
 if __name__ == "__main__":

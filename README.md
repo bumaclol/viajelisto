@@ -7,6 +7,7 @@ La cuenta, las listas y el viaje se guardan en el servidor:
 `https://viajelisto.onrender.com`
 
 Al volver a iniciar sesión con el mismo correo y contraseña, se recuperan las listas y el viaje guardados en esa cuenta.
+También puedes iniciar sesión con un código OTP de 6 dígitos enviado al correo; el servidor debe tener configurado el envío de correo.
 
 ## Cómo abrirla
 

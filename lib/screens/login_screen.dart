@@ -168,7 +168,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                           const SizedBox(height: 6),
                           Text(
                             _byCode
-                                ? 'Pide un código de 6 dígitos. Si el correo no está configurado, el código aparece aquí.'
+                                ? 'Pide un código de 6 dígitos. Lo enviaremos a tu correo si el servicio de correo está configurado.'
                                 : _recovering
                                 ? (cloud
                                     ? 'Pide un código de un solo uso. Cuando el correo esté conectado, ese código llegará al mail.'
